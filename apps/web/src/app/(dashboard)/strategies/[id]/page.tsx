@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label";
 import { CodeEditor } from "@/components/code-editor";
 import { BacktestForm } from "@/components/strategies/backtest-form";
 import { BacktestList } from "@/components/strategies/backtest-list";
+import { LiveList } from "@/components/strategies/live-list";
+import { RunLiveForm } from "@/components/strategies/run-live-form";
 
 export default function StrategyEditor({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -99,6 +101,7 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
             Archive
           </Button>
           <BacktestForm strategyId={id} />
+          <RunLiveForm strategyId={id} />
           <Button size="sm" onClick={save} disabled={busy || !dirty}>
             {busy ? "Saving…" : "Save version"}
           </Button>
@@ -150,6 +153,7 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
         </Card>
 
         <div className="space-y-4">
+          <LiveList strategyId={id} />
           <BacktestList strategyId={id} />
 
           <Card className="h-fit">

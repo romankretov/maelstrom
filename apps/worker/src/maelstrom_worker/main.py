@@ -5,6 +5,7 @@ from arq import cron
 from arq.connections import RedisSettings
 
 from . import tasks
+from .live import manager as live_manager
 from .settings import get_settings
 from .streams import manager as stream_manager
 
@@ -27,9 +28,11 @@ async def startup(ctx: dict[str, Any]) -> None:
     # Spin up live OHLCV streams. These run for the lifetime of the worker
     # process alongside arq's job loop.
     await stream_manager.start_default()
+    await live_manager.start()
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
+    await live_manager.stop()
     await stream_manager.stop_all()
     log.info("worker.shutdown")
 
