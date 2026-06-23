@@ -13,6 +13,9 @@ dependencies = [
     "structlog>=24.4",
     "httpx>=0.28",
     "pynacl>=1.5",
+    "ccxt>=4.4",
+    "python-dateutil>=2.9",
+    "orjson>=3.10",
 ]
 
 [project.optional-dependencies]

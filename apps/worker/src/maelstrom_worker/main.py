@@ -27,8 +27,15 @@ def _redis_settings() -> RedisSettings:
 class WorkerSettings:
     """arq entrypoint. Run with: `arq maelstrom_worker.main.WorkerSettings`."""
 
-    functions: ClassVar = [tasks.heartbeat]
-    cron_jobs: ClassVar = [cron(tasks.heartbeat, second=0)]  # every minute
+    functions: ClassVar = [
+        tasks.heartbeat,
+        tasks.sync_instruments,
+        tasks.backfill_ohlcv,
+    ]
+    cron_jobs: ClassVar = [
+        cron(tasks.heartbeat, second=0),  # every minute
+        cron(tasks.sync_instruments, hour=3, minute=0),  # daily 03:00 UTC
+    ]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = _redis_settings()

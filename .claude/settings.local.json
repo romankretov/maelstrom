@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(~/.local/bin/ruff format *)",
+      "Bash(~/.local/bin/ruff check *)"
+    ]
+  }
+}
