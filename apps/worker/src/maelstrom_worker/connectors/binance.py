@@ -1,14 +1,10 @@
-"""Binance USDM perpetuals via ccxt.
-
-We use the unified `binanceusdm` market type (USDT-margined perps), which is
-what most Hyperliquid-like flows target. Spot can be added later.
-"""
+"""Binance USDM perpetuals via ccxt.pro (REST + WS in one client)."""
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
 
-import ccxt.async_support as ccxt
+import ccxt.pro as ccxtpro
 import structlog
 
 from .base import Bar, Instrument, Trade
@@ -30,7 +26,7 @@ class CCXTBinanceSource:
     source = "binance"
 
     def __init__(self) -> None:
-        self._ex = ccxt.binanceusdm({"enableRateLimit": True})
+        self._ex = ccxtpro.binanceusdm({"enableRateLimit": True})
 
     async def close(self) -> None:
         await self._ex.close()
@@ -112,11 +108,11 @@ class CCXTBinanceSource:
                     ),
                 )
             last_ts = chunk[-1][0]
-            if last_ts <= cursor_ms:  # no progress — exit
+            if last_ts <= cursor_ms:
                 break
             cursor_ms = last_ts + 1
             if len(chunk) < limit:
-                break  # tail of available data
+                break
         return all_bars
 
     async def stream_ohlcv(
@@ -124,16 +120,47 @@ class CCXTBinanceSource:
         symbol: str,
         timeframe: str,
     ) -> AsyncIterator[Bar]:
-        # Will be wired in Phase 1.4 using ccxt.pro (watch_ohlcv).
-        # Implemented as a polling placeholder for now so the Protocol is satisfied.
-        raise NotImplementedError("stream_ohlcv is wired in Phase 1.4")
-        yield  # pragma: no cover  (makes this an async generator type-wise)
+        """ccxt.pro.watch_ohlcv yields bar updates; the last entry is the
+        still-forming bar so the same ts will reappear with new ohlcv values
+        until the bar closes."""
+        raw_symbol = await self._resolve_raw(symbol)
+        while True:
+            bars = await self._ex.watch_ohlcv(raw_symbol, timeframe=timeframe)
+            for candle in bars:
+                ts_ms, o, h, lo, cl, vol = (
+                    candle[0],
+                    candle[1],
+                    candle[2],
+                    candle[3],
+                    candle[4],
+                    candle[5],
+                )
+                yield Bar(
+                    source=self.source,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    ts=datetime.fromtimestamp(ts_ms / 1000, tz=UTC),
+                    open=float(o),
+                    high=float(h),
+                    low=float(lo),
+                    close=float(cl),
+                    volume=float(vol),
+                )
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[Trade]:
-        raise NotImplementedError("stream_trades is wired in Phase 1.4")
-        yield  # pragma: no cover
-
-    # ---------------------------------------------------------- helpers
+        raw_symbol = await self._resolve_raw(symbol)
+        while True:
+            trades = await self._ex.watch_trades(raw_symbol)
+            for t in trades:
+                yield Trade(
+                    source=self.source,
+                    symbol=symbol,
+                    ts=datetime.fromtimestamp(t["timestamp"] / 1000, tz=UTC),
+                    trade_id=str(t.get("id") or f"{t['timestamp']}-{t['price']}"),
+                    price=float(t["price"]),
+                    qty=float(t["amount"]),
+                    side=t["side"],
+                )
 
     async def _resolve_raw(self, normalized: str) -> str:
         """Cache markets; map BTC-PERP -> BTC/USDT:USDT."""

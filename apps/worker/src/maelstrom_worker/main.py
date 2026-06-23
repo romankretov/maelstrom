@@ -6,6 +6,7 @@ from arq.connections import RedisSettings
 
 from . import tasks
 from .settings import get_settings
+from .streams import manager as stream_manager
 
 log = structlog.get_logger()
 
@@ -14,8 +15,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     settings = get_settings()
     log.info("worker.startup", env=settings.env)
     # Kick a sync on every worker boot so a fresh deploy populates instruments
-    # without an out-of-band step. Cheap (~30 KB markets payload from each source)
-    # and idempotent (UPSERT). Daily cron still runs at 03:00 UTC.
+    # without an out-of-band step. Idempotent. Daily cron still runs at 03:00 UTC.
     pool = ctx.get("redis")
     if pool is not None:
         try:
@@ -24,8 +24,13 @@ async def startup(ctx: dict[str, Any]) -> None:
         except Exception as e:  # opportunistic; don't fail boot if Redis isn't ready
             log.warning("worker.startup.enqueue_failed", error=str(e))
 
+    # Spin up live OHLCV streams. These run for the lifetime of the worker
+    # process alongside arq's job loop.
+    await stream_manager.start_default()
+
 
 async def shutdown(ctx: dict[str, Any]) -> None:
+    await stream_manager.stop_all()
     log.info("worker.shutdown")
 
 

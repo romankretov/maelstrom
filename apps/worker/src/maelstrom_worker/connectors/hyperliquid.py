@@ -1,15 +1,10 @@
-"""Hyperliquid perpetuals via ccxt's hyperliquid exchange.
-
-ccxt 4.x ships first-class Hyperliquid support (REST + WS), so we don't need
-the hyperliquid-python-sdk for read-only ingest. Trading uses the SDK
-directly in Phase 3 for the order path.
-"""
+"""Hyperliquid perpetuals via ccxt.pro (REST + WS in one client)."""
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
 
-import ccxt.async_support as ccxt
+import ccxt.pro as ccxtpro
 import structlog
 
 from .base import Bar, Instrument, Trade
@@ -31,7 +26,7 @@ class HyperliquidSource:
     source = "hyperliquid"
 
     def __init__(self) -> None:
-        self._ex = ccxt.hyperliquid({"enableRateLimit": True})
+        self._ex = ccxtpro.hyperliquid({"enableRateLimit": True})
 
     async def close(self) -> None:
         await self._ex.close()
@@ -58,7 +53,7 @@ class HyperliquidSource:
                     meta={
                         "tick_size": (m.get("precision") or {}).get("price"),
                         "step_size": (m.get("precision") or {}).get("amount"),
-                        "max_leverage": ((m.get("info") or {}).get("maxLeverage")),
+                        "max_leverage": (m.get("info") or {}).get("maxLeverage"),
                     },
                 ),
             )
@@ -122,12 +117,44 @@ class HyperliquidSource:
         symbol: str,
         timeframe: str,
     ) -> AsyncIterator[Bar]:
-        raise NotImplementedError("stream_ohlcv is wired in Phase 1.4")
-        yield
+        raw_symbol = await self._resolve_raw(symbol)
+        while True:
+            bars = await self._ex.watch_ohlcv(raw_symbol, timeframe=timeframe)
+            for candle in bars:
+                ts_ms, o, h, lo, cl, vol = (
+                    candle[0],
+                    candle[1],
+                    candle[2],
+                    candle[3],
+                    candle[4],
+                    candle[5],
+                )
+                yield Bar(
+                    source=self.source,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    ts=datetime.fromtimestamp(ts_ms / 1000, tz=UTC),
+                    open=float(o),
+                    high=float(h),
+                    low=float(lo),
+                    close=float(cl),
+                    volume=float(vol),
+                )
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[Trade]:
-        raise NotImplementedError("stream_trades is wired in Phase 1.4")
-        yield
+        raw_symbol = await self._resolve_raw(symbol)
+        while True:
+            trades = await self._ex.watch_trades(raw_symbol)
+            for t in trades:
+                yield Trade(
+                    source=self.source,
+                    symbol=symbol,
+                    ts=datetime.fromtimestamp(t["timestamp"] / 1000, tz=UTC),
+                    trade_id=str(t.get("id") or f"{t['timestamp']}-{t['price']}"),
+                    price=float(t["price"]),
+                    qty=float(t["amount"]),
+                    side=t["side"],
+                )
 
     async def _resolve_raw(self, normalized: str) -> str:
         if not self._ex.markets:

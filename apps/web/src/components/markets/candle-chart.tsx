@@ -10,7 +10,17 @@ import {
 } from "lightweight-charts";
 import type { Bar } from "@/lib/markets";
 
-export function CandleChart({ bars }: { bars: Bar[] }) {
+function toLwc(b: Bar) {
+  return {
+    time: (new Date(b.ts).getTime() / 1000) as Time,
+    open: b.open,
+    high: b.high,
+    low: b.low,
+    close: b.close,
+  };
+}
+
+export function CandleChart({ bars, liveBar }: { bars: Bar[]; liveBar?: Bar | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -50,20 +60,21 @@ export function CandleChart({ bars }: { bars: Bar[] }) {
     };
   }, []);
 
-  // Update data when bars change.
+  // Initial data load — replaces series whenever the bar array reference changes.
   useEffect(() => {
     const series = seriesRef.current;
     if (!series) return;
-    const data = bars.map((b) => ({
-      time: (new Date(b.ts).getTime() / 1000) as Time,
-      open: b.open,
-      high: b.high,
-      low: b.low,
-      close: b.close,
-    }));
-    series.setData(data);
+    series.setData(bars.map(toLwc));
     chartRef.current?.timeScale().fitContent();
   }, [bars]);
+
+  // Live updates — much cheaper than setData on every tick.
+  useEffect(() => {
+    if (!liveBar) return;
+    const series = seriesRef.current;
+    if (!series) return;
+    series.update(toLwc(liveBar));
+  }, [liveBar]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }
