@@ -41,7 +41,7 @@ async def heartbeat(ctx: dict[str, Any]) -> str:
         await session.execute(
             text(
                 "INSERT INTO audit_log (actor_kind, action, payload) "
-                "VALUES ('worker', 'worker.heartbeat', :p::json)",
+                "VALUES ('worker', 'worker.heartbeat', CAST(:p AS json))",
             ),
             {"p": '{"ts": "' + datetime.now(UTC).isoformat() + '"}'},
         )
