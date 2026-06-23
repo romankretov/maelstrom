@@ -48,6 +48,9 @@ data/
 logs/
 .cache/
 
+# Per-developer tool configs
+.claude/
+
 # Maelstrom local
 .image-tag
 .image-tag.bak
