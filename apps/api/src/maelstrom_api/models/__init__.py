@@ -17,10 +17,24 @@ from .strategy import (
     Strategy,
     StrategyVersion,
 )
+from .trading import (
+    Account,
+    AccountEquity,
+    AccountKind,
+    Fill,
+    LiveStatus,
+    LiveStrategy,
+    Order,
+    OrderStatus,
+    Position,
+)
 from .user import Role, User
 
 __all__ = [
     "OHLCV",
+    "Account",
+    "AccountEquity",
+    "AccountKind",
     "AssetKind",
     "AuditLog",
     "BackfillJob",
@@ -29,7 +43,13 @@ __all__ = [
     "BacktestRun",
     "BacktestStatus",
     "BacktestTrade",
+    "Fill",
     "Instrument",
+    "LiveStatus",
+    "LiveStrategy",
+    "Order",
+    "OrderStatus",
+    "Position",
     "Role",
     "Source",
     "Strategy",
