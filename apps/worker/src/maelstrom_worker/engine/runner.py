@@ -25,35 +25,34 @@ class EngineError(Exception):
     """Raised when the user strategy can't be compiled or run."""
 
 
-# Whitelist of builtins exposed to user strategy code. Keep narrow.
+# Builtins exposed to user strategy code. Wide enough that normal Python
+# (classes, exceptions, comprehensions, iteration protocol) works; narrow
+# enough that the obvious escape hatches are gone. Phase 3 will run user
+# code in a Docker sandbox; this list is the cheap belt before that.
+_BLOCKED_BUILTINS: frozenset[str] = frozenset(
+    {
+        "__import__",
+        "open",
+        "input",
+        "exec",
+        "eval",
+        "compile",
+        "globals",
+        "locals",
+        "vars",
+        "breakpoint",
+        "exit",
+        "quit",
+        "help",
+        "memoryview",
+    },
+)
 _ALLOWED_BUILTINS: dict[str, Any] = {
     name: getattr(builtins, name)
-    for name in (
-        "abs",
-        "all",
-        "any",
-        "bool",
-        "dict",
-        "enumerate",
-        "filter",
-        "float",
-        "int",
-        "isinstance",
-        "len",
-        "list",
-        "map",
-        "max",
-        "min",
-        "print",  # captured below
-        "range",
-        "round",
-        "set",
-        "sorted",
-        "str",
-        "sum",
-        "tuple",
-        "zip",
-    )
+    for name in dir(builtins)
+    # Keep dunders the language needs (e.g. __build_class__ for `class X:`)
+    # but drop user-targeted ones starting with single underscore.
+    if (not name.startswith("_") or name.startswith("__")) and name not in _BLOCKED_BUILTINS
 }
 
 
