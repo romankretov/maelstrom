@@ -1,10 +1,12 @@
 """Source registry — single place to look up a MarketDataSource by name."""
 
+from collections.abc import Callable
+
 from .base import MarketDataSource
 from .binance import CCXTBinanceSource
 from .hyperliquid import HyperliquidSource
 
-_FACTORIES = {
+_FACTORIES: dict[str, Callable[[], MarketDataSource]] = {
     "binance": CCXTBinanceSource,
     "hyperliquid": HyperliquidSource,
 }

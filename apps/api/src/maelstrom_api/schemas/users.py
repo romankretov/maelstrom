@@ -2,7 +2,7 @@ import uuid
 
 from fastapi_users import schemas
 
-from .models import Role
+from maelstrom_api.models import Role
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
