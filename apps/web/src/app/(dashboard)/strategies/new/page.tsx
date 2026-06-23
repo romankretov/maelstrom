@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { CodeEditor } from "@/components/code-editor";
 
 export default function NewStrategy() {
   const router = useRouter();
@@ -39,7 +39,7 @@ export default function NewStrategy() {
   }
 
   return (
-    <Card className="mx-auto max-w-3xl">
+    <Card className="mx-auto max-w-4xl">
       <CardHeader>
         <CardTitle>New strategy</CardTitle>
       </CardHeader>
@@ -66,15 +66,8 @@ export default function NewStrategy() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="code">Code</Label>
-            <Textarea
-              id="code"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              rows={18}
-              spellCheck={false}
-              className="font-mono text-sm leading-snug"
-            />
+            <Label>Code</Label>
+            <CodeEditor value={code} onChange={setCode} height={420} />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <div className="flex justify-end gap-2">

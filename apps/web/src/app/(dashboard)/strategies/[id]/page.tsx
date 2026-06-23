@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { CodeEditor } from "@/components/code-editor";
+import { BacktestForm } from "@/components/strategies/backtest-form";
+import { BacktestList } from "@/components/strategies/backtest-list";
 
 export default function StrategyEditor({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -25,7 +27,6 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Hydrate editor when strategy loads / changes.
   useEffect(() => {
     if (!strategy) return;
     setCode(strategy.latest_version?.code ?? "");
@@ -37,21 +38,18 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
     setBusy(true);
     setSaveError(null);
     try {
-      // Save description as a strategy PATCH if changed.
       if (strategy && description !== (strategy.description ?? "")) {
         await api(`/strategies/${id}`, {
           method: "PATCH",
           body: JSON.stringify({ description: description || null }),
         });
       }
-      // New code version.
       await api<StrategyVersion>(`/strategies/${id}/versions`, {
         method: "POST",
         body: JSON.stringify({ code, message: message || null }),
       });
       setMessage("");
       setDirty(false);
-      // Refresh both queries.
       await Promise.all([
         mutate(`/strategies/${id}`),
         mutate(`/strategies/${id}/versions`),
@@ -70,7 +68,7 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
 
   async function archive() {
     if (!strategy) return;
-    if (!confirm(`Archive "${strategy.name}"? You can still see it with archived=true.`)) return;
+    if (!confirm(`Archive "${strategy.name}"?`)) return;
     await api(`/strategies/${id}`, { method: "DELETE" });
     router.push("/strategies");
   }
@@ -86,7 +84,7 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="space-y-4">
-      <header className="flex items-center justify-between gap-4">
+      <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-semibold">{strategy.name}</h1>
           <p className="text-xs text-muted-foreground">
@@ -100,6 +98,7 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
           <Button variant="ghost" size="sm" onClick={archive}>
             Archive
           </Button>
+          <BacktestForm strategyId={id} />
           <Button size="sm" onClick={save} disabled={busy || !dirty}>
             {busy ? "Saving…" : "Save version"}
           </Button>
@@ -112,15 +111,13 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
             <CardTitle className="text-sm">Code</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Textarea
+            <CodeEditor
               value={code}
-              onChange={(e) => {
-                setCode(e.target.value);
+              onChange={(v) => {
+                setCode(v);
                 setDirty(true);
               }}
-              rows={28}
-              spellCheck={false}
-              className="font-mono text-sm leading-snug"
+              height={520}
             />
             <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
               <div className="space-y-1">
@@ -152,42 +149,46 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
           </CardContent>
         </Card>
 
-        <Card className="h-fit">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Versions</CardTitle>
-          </CardHeader>
-          <CardContent className="max-h-[70vh] space-y-2 overflow-y-auto">
-            {!versions && <p className="text-xs text-muted-foreground">Loading…</p>}
-            {versions?.length === 0 && (
-              <p className="text-xs text-muted-foreground">No versions yet.</p>
-            )}
-            {versions?.map((v) => (
-              <button
-                key={v.id}
-                type="button"
-                onClick={() => {
-                  if (dirty && !confirm("Discard unsaved changes?")) return;
-                  setCode(v.code);
-                  setDirty(true);
-                }}
-                className="flex w-full flex-col items-start rounded-md border bg-card px-3 py-2 text-left hover:bg-card/70"
-              >
-                <span className="text-sm">
-                  v{v.version}
-                  {strategy.latest_version?.id === v.id && (
-                    <span className="ml-2 rounded bg-secondary px-1.5 py-0.5 text-[10px] uppercase">
-                      head
-                    </span>
-                  )}
-                </span>
-                <span className="text-xs text-muted-foreground">{v.message ?? "—"}</span>
-                <span className="text-[10px] text-muted-foreground">
-                  {new Date(v.created_at).toLocaleString()}
-                </span>
-              </button>
-            ))}
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          <BacktestList strategyId={id} />
+
+          <Card className="h-fit">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Versions</CardTitle>
+            </CardHeader>
+            <CardContent className="max-h-[40vh] space-y-2 overflow-y-auto">
+              {!versions && <p className="text-xs text-muted-foreground">Loading…</p>}
+              {versions?.length === 0 && (
+                <p className="text-xs text-muted-foreground">No versions yet.</p>
+              )}
+              {versions?.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => {
+                    if (dirty && !confirm("Discard unsaved changes?")) return;
+                    setCode(v.code);
+                    setDirty(true);
+                  }}
+                  className="flex w-full flex-col items-start rounded-md border bg-card px-3 py-2 text-left hover:bg-card/70"
+                >
+                  <span className="text-sm">
+                    v{v.version}
+                    {strategy.latest_version?.id === v.id && (
+                      <span className="ml-2 rounded bg-secondary px-1.5 py-0.5 text-[10px] uppercase">
+                        head
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{v.message ?? "—"}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {new Date(v.created_at).toLocaleString()}
+                  </span>
+                </button>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
