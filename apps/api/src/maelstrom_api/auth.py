@@ -24,13 +24,11 @@ async def get_user_db(
 
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
-    @property
-    def reset_password_token_secret(self) -> str:
-        return get_settings().api_secret_key.get_secret_value()
-
-    @property
-    def verification_token_secret(self) -> str:
-        return get_settings().api_secret_key.get_secret_value()
+    def __init__(self, user_db: SQLAlchemyUserDatabase[User, uuid.UUID]) -> None:
+        super().__init__(user_db)
+        secret = get_settings().api_secret_key.get_secret_value()
+        self.reset_password_token_secret = secret
+        self.verification_token_secret = secret
 
     async def on_after_register(
         self,
