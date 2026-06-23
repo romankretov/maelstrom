@@ -28,18 +28,19 @@ export function CandleChart({ bars, liveBar }: { bars: Bar[]; liveBar?: Bar | nu
   // Create chart once.
   useEffect(() => {
     if (!containerRef.current) return;
+    // NB: lightweight-charts v4 only accepts hex or rgb()/rgba(), not hsl()
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "hsl(215, 20%, 65%)",
+        background: { type: ColorType.Solid, color: "rgba(0,0,0,0)" },
+        textColor: "#9ca3af",
         fontFamily: "ui-monospace, SFMono-Regular, monospace",
       },
       grid: {
-        vertLines: { color: "hsl(217, 33%, 18%)" },
-        horzLines: { color: "hsl(217, 33%, 18%)" },
+        vertLines: { color: "#1f2937" },
+        horzLines: { color: "#1f2937" },
       },
-      rightPriceScale: { borderColor: "hsl(217, 33%, 18%)" },
-      timeScale: { borderColor: "hsl(217, 33%, 18%)", timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderColor: "#1f2937" },
+      timeScale: { borderColor: "#1f2937", timeVisible: true, secondsVisible: false },
       crosshair: { mode: 1 },
       autoSize: true,
     });
