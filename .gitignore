@@ -50,6 +50,7 @@ logs/
 
 # Per-developer tool configs
 .claude/
+.venvs/
 
 # Maelstrom local
 .image-tag

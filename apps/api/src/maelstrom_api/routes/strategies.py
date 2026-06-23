@@ -241,7 +241,7 @@ async def create_version(
     )
     session.add(v)
     # Bump strategy.updated_at so it sorts to the top of the list.
-    s.updated_at = func.now()  # type: ignore[assignment]
+    s.updated_at = func.now()
     await audit.record(
         session,
         action="strategy.version.create",

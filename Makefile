@@ -54,26 +54,47 @@ migrate-down:  ## Roll back one migration
 	$(COMPOSE_DEV) exec api alembic downgrade -1
 
 # ---- Quality ----------------------------------------------------------------
-.PHONY: lint format typecheck test ci
+# Local checks aim to match CI exactly. They use real venvs with the apps'
+# pinned dependencies (not --ignore-missing-imports) so mypy catches what
+# CI catches before we push.
+.PHONY: lint format typecheck test ci precheck venvs
+
+API_VENV  := .venvs/api
+WORKER_VENV := .venvs/worker
+
+venvs:  ## Create / refresh local venvs with real deps for accurate mypy
+	@mkdir -p .venvs
+	python3 -m venv $(API_VENV)
+	$(API_VENV)/bin/pip install --quiet --upgrade pip
+	$(API_VENV)/bin/pip install --quiet -e "apps/api[dev]"
+	python3 -m venv $(WORKER_VENV)
+	$(WORKER_VENV)/bin/pip install --quiet --upgrade pip
+	$(WORKER_VENV)/bin/pip install --quiet -e "apps/worker[dev]"
+
 lint:  ## Run linters across all apps
-	cd apps/api && uv run ruff check . && uv run ruff format --check .
-	cd apps/worker && uv run ruff check . && uv run ruff format --check .
-	cd apps/web && npm run lint
+	$(API_VENV)/bin/ruff check apps/api/src apps/api/alembic apps/api/tests
+	$(API_VENV)/bin/ruff format --check apps/api/src apps/api/alembic apps/api/tests
+	$(WORKER_VENV)/bin/ruff check apps/worker/src
+	$(WORKER_VENV)/bin/ruff format --check apps/worker/src
+	cd apps/web && npm run lint && npx prettier --check "src/**/*.{ts,tsx,css}"
 
 format:  ## Auto-format all code
-	cd apps/api && uv run ruff format . && uv run ruff check --fix .
-	cd apps/worker && uv run ruff format . && uv run ruff check --fix .
-	cd apps/web && npm run format
+	$(API_VENV)/bin/ruff format apps/api/src apps/api/alembic apps/api/tests
+	$(API_VENV)/bin/ruff check --fix apps/api/src apps/api/alembic apps/api/tests
+	$(WORKER_VENV)/bin/ruff format apps/worker/src
+	$(WORKER_VENV)/bin/ruff check --fix apps/worker/src
+	cd apps/web && npx prettier --write "src/**/*.{ts,tsx,css}"
 
-typecheck:  ## Run type checkers
-	cd apps/api && uv run mypy src
-	cd apps/worker && uv run mypy src
+typecheck:  ## mypy (with real deps) + tsc
+	cd apps/api && ../../$(API_VENV)/bin/mypy src
+	cd apps/worker && ../../$(WORKER_VENV)/bin/mypy src
 	cd apps/web && npm run typecheck
 
 test:  ## Run all tests
-	cd apps/api && uv run pytest
+	cd apps/api && ../../$(API_VENV)/bin/pytest
 
-ci: lint typecheck test  ## Everything CI does
+ci: lint typecheck test  ## Everything CI runs
+precheck: lint typecheck  ## Cheaper pre-push sweep (skip tests if they need infra)
 
 # ---- Deploy -----------------------------------------------------------------
 .PHONY: deploy rollback kill
