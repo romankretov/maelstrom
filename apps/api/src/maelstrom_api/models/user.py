@@ -21,7 +21,11 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
 
     id: Mapped[uuid.UUID]
     role: Mapped[Role] = mapped_column(
-        Enum(Role, name="user_role"),
+        Enum(
+            Role,
+            name="user_role",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
         default=Role.VIEWER,
         nullable=False,
     )
