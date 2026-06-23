@@ -1,9 +1,10 @@
-from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import ORJSONResponse
 
 from . import logging_config, totp
 from .auth import auth_backend, fastapi_users
@@ -29,7 +30,7 @@ def create_app() -> FastAPI:
         title="Maelstrom API",
         version="0.0.1",
         lifespan=lifespan,
-        default_response_class=__import__("fastapi.responses", fromlist=["ORJSONResponse"]).ORJSONResponse,
+        default_response_class=ORJSONResponse,
     )
     if settings.cors_origins:
         app.add_middleware(
@@ -58,6 +59,3 @@ def create_app() -> FastAPI:
     )
     app.include_router(totp.router)
     return app
-
-
-app = create_app()

@@ -34,7 +34,10 @@ packages = ["src/maelstrom_worker"]
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
-extend = "../api/pyproject.toml"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "C4", "UP", "N", "S", "A", "RET", "SIM", "PT", "RUF", "ASYNC", "TID"]
+ignore = ["S101"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -13,12 +13,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ghcr.io/astral-sh/uv:0.5 /uv /uvx /usr/local/bin/
 
 WORKDIR /app
+ENV VIRTUAL_ENV=/opt/venv
+RUN uv venv "$VIRTUAL_ENV"
+
 COPY apps/worker/pyproject.toml ./pyproject.toml
-RUN uv venv /opt/venv && \
-    . /opt/venv/bin/activate && \
-    uv pip install --no-cache -r <(uv pip compile pyproject.toml)
+RUN uv pip compile pyproject.toml -o /tmp/requirements.txt && \
+    uv pip install --no-cache -r /tmp/requirements.txt
+
 COPY apps/worker/src ./src
-RUN . /opt/venv/bin/activate && uv pip install --no-cache --no-deps .
+RUN uv pip install --no-cache --no-deps .
 
 # ----------------------------------------------------------------------------
 FROM python:${PYTHON_VERSION} AS runtime

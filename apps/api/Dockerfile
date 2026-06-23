@@ -14,15 +14,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ghcr.io/astral-sh/uv:0.5 /uv /uvx /usr/local/bin/
 
 WORKDIR /app
+ENV VIRTUAL_ENV=/opt/venv
+RUN uv venv "$VIRTUAL_ENV"
+
 COPY apps/api/pyproject.toml ./pyproject.toml
-RUN uv venv /opt/venv && \
-    . /opt/venv/bin/activate && \
-    uv pip install --no-cache -r <(uv pip compile pyproject.toml)
+RUN uv pip compile pyproject.toml -o /tmp/requirements.txt && \
+    uv pip install --no-cache -r /tmp/requirements.txt
 
 COPY apps/api/src ./src
 COPY apps/api/alembic.ini ./alembic.ini
 COPY apps/api/alembic ./alembic
-RUN . /opt/venv/bin/activate && uv pip install --no-cache --no-deps .
+RUN uv pip install --no-cache --no-deps .
 
 # ----------------------------------------------------------------------------
 FROM python:${PYTHON_VERSION} AS runtime
@@ -44,4 +46,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8000/healthz || exit 1
 
-CMD ["uvicorn", "maelstrom_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["uvicorn", "maelstrom_api.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
