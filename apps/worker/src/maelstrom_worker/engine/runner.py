@@ -313,19 +313,10 @@ async def run_backtest_run(session: AsyncSession, run_id: str) -> dict[str, Any]
 
     source, symbols, timeframe, since, until, initial_capital, params, code = row
 
-    # Mark running.
+    # Mark running. backtest_runs has started_at + completed_at (no
+    # updated_at) — we only stamp those bookends.
     await session.execute(
-        text(
-            "UPDATE backtest_runs "
-            "   SET status='running', started_at=now(), updated_at=now() "
-            " WHERE id=:id",
-        ),
-        {"id": run_id},
-    )
-    # NB: backtest_runs has no updated_at column — using completed_at for done/failed.
-    await session.commit()
-    await session.execute(
-        text("UPDATE backtest_runs SET started_at=now() WHERE id=:id"),
+        text("UPDATE backtest_runs SET status='running', started_at=now() WHERE id=:id"),
         {"id": run_id},
     )
     await session.commit()
