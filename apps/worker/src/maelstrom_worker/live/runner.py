@@ -197,23 +197,37 @@ class LiveRunner:
         }
 
     async def _set_status(self, status: str, error: str | None = None) -> None:
+        # asyncpg can't deduce a single type for a bind param reused across
+        # a varchar column assignment AND text-literal comparisons. Precompute
+        # the timestamp-affecting booleans in Python so each named param is
+        # used in exactly one context.
+        is_running = status == "running"
+        is_terminal = status in ("stopped", "failed")
         sql = (
             "UPDATE live_strategies "
-            "   SET status = :status, error = :error, updated_at = now(), "
-            "       started_at = COALESCE("
-            "         started_at, "
-            "         CASE WHEN :status = 'running' THEN now() ELSE started_at END"
-            "       ), "
+            "   SET status     = :status, "
+            "       error      = :error, "
+            "       updated_at = now(), "
+            "       started_at = CASE "
+            "                      WHEN :is_running AND started_at IS NULL THEN now() "
+            "                      ELSE started_at "
+            "                    END, "
             "       stopped_at = CASE "
-            "                     WHEN :status IN ('stopped','failed') THEN now() "
-            "                     ELSE stopped_at "
+            "                      WHEN :is_terminal THEN now() "
+            "                      ELSE stopped_at "
             "                    END "
             " WHERE id = :id"
         )
         async with self.sm() as session:
             await session.execute(
                 text(sql),
-                {"id": self.live_strategy_id, "status": status, "error": error},
+                {
+                    "id": self.live_strategy_id,
+                    "status": status,
+                    "error": error,
+                    "is_running": is_running,
+                    "is_terminal": is_terminal,
+                },
             )
             await session.commit()
 
