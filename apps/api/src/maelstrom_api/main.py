@@ -9,7 +9,7 @@ from fastapi.responses import ORJSONResponse
 from . import logging_config, totp
 from .auth import auth_backend, fastapi_users
 from .config import get_settings
-from .routes import health, markets, strategies, ws_markets
+from .routes import backtests, health, markets, strategies, ws_markets
 from .schemas import UserCreate, UserRead, UserUpdate
 
 log = structlog.get_logger()
@@ -60,5 +60,6 @@ def create_app() -> FastAPI:
     app.include_router(totp.router)
     app.include_router(markets.router)
     app.include_router(strategies.router)
+    app.include_router(backtests.router)
     app.include_router(ws_markets.router)
     return app

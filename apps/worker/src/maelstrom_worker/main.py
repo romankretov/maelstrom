@@ -46,6 +46,7 @@ class WorkerSettings:
         tasks.heartbeat,
         tasks.sync_instruments,
         tasks.backfill_ohlcv,
+        tasks.run_backtest,
     ]
     cron_jobs: ClassVar = [
         cron(tasks.heartbeat, second=0),  # every minute

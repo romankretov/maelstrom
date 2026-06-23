@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from .connectors import Bar, Instrument, get_source, list_sources
+from .engine import run_backtest_run
 from .settings import get_settings
 
 log = structlog.get_logger()
@@ -159,6 +160,15 @@ async def _upsert_bars(session: AsyncSession, bars: list[Bar]) -> int:
     await session.execute(_UPSERT_OHLCV_SQL, payload)
     await session.commit()
     return len(payload)
+
+
+async def run_backtest(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:
+    """Execute a backtest_runs row to completion."""
+    log.info("backtest.task.start", run_id=run_id)
+    async with _sm()() as session:
+        result = await run_backtest_run(session, run_id)
+    log.info("backtest.task.done", run_id=run_id, status=result.get("status"))
+    return result
 
 
 async def backfill_ohlcv(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
