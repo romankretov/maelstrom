@@ -9,6 +9,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 from fastapi_users_db_sqlalchemy.generics import GUID
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0001_initial"
 down_revision: str | Sequence[str] | None = None
@@ -20,11 +21,20 @@ def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS timescaledb;")
     op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
 
-    user_role = sa.Enum(
+    # Create enum idempotently — survives a partial prior migration run.
+    op.execute(
+        """
+        DO $$ BEGIN
+            CREATE TYPE user_role AS ENUM ('admin', 'trader', 'viewer', 'readonly');
+        EXCEPTION WHEN duplicate_object THEN null; END $$;
+        """,
+    )
+    # Tell SQLAlchemy: enum already exists, don't issue CREATE TYPE during create_table.
+    user_role = postgresql.ENUM(
         "admin", "trader", "viewer", "readonly",
         name="user_role",
+        create_type=False,
     )
-    user_role.create(op.get_bind(), checkfirst=True)
 
     op.create_table(
         "users",
