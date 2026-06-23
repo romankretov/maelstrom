@@ -13,6 +13,16 @@ log = structlog.get_logger()
 async def startup(ctx: dict[str, Any]) -> None:
     settings = get_settings()
     log.info("worker.startup", env=settings.env)
+    # Kick a sync on every worker boot so a fresh deploy populates instruments
+    # without an out-of-band step. Cheap (~30 KB markets payload from each source)
+    # and idempotent (UPSERT). Daily cron still runs at 03:00 UTC.
+    pool = ctx.get("redis")
+    if pool is not None:
+        try:
+            await pool.enqueue_job("sync_instruments")
+            log.info("worker.startup.enqueued_initial_sync")
+        except Exception as e:  # opportunistic; don't fail boot if Redis isn't ready
+            log.warning("worker.startup.enqueue_failed", error=str(e))
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
