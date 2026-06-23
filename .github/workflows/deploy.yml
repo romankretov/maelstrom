@@ -1,0 +1,85 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (12-char SHA, 'latest', or 'main')"
+        default: "main"
+        required: true
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image tag
+        id: tag
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known_hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+
+      - name: Deploy
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          ssh "${USER}@${HOST}" bash -s <<EOF
+            set -euo pipefail
+            cd /opt/maelstrom
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+
+            # Keep prior tag for rollback.
+            if [[ -f .image-tag ]]; then cp .image-tag .image-tag.bak; fi
+            echo "${TAG}" > .image-tag
+
+            # Patch IMAGE_TAG in .env.
+            sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${TAG}|" .env || echo "IMAGE_TAG=${TAG}" >> .env
+
+            echo "Pulling images at tag ${TAG}..."
+            docker compose -f compose.prod.yml pull
+
+            echo "Running migrations..."
+            docker compose -f compose.prod.yml --profile tools run --rm migrate
+
+            echo "Restarting services..."
+            docker compose -f compose.prod.yml up -d --remove-orphans
+          EOF
+
+      - name: Healthcheck
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh "${USER}@${HOST}" \
+            "cd /opt/maelstrom && ./infra/scripts/healthcheck.sh ${{ secrets.DEPLOY_HOST }} 240" \
+            || {
+              echo "::error::Healthcheck failed — rolling back."
+              ssh "${USER}@${HOST}" "cd /opt/maelstrom && ./infra/scripts/rollback.sh"
+              exit 1
+            }
+
+      - name: Summary
+        run: |
+          echo "✅ Deployed tag **${{ steps.tag.outputs.value }}** to production." >> "$GITHUB_STEP_SUMMARY"

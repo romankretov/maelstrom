@@ -1,0 +1,54 @@
+# Maelstrom — Caddy reverse proxy.
+# Resolves ${MAELSTROM_DOMAIN} and ${CADDY_EMAIL} from container env.
+
+{
+    email {$CADDY_EMAIL}
+    servers {
+        protocols h1 h2 h3
+    }
+}
+
+{$MAELSTROM_DOMAIN}, www.{$MAELSTROM_DOMAIN} {
+    encode zstd gzip
+
+    # Tighten headers a bit. HSTS is auto-enabled by Caddy on TLS sites.
+    header {
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "geolocation=(), microphone=(), camera=()"
+        -Server
+    }
+
+    # API: strip /api prefix and forward to FastAPI.
+    handle_path /api/* {
+        reverse_proxy api:8000 {
+            health_uri /healthz
+            health_interval 10s
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    # WebSockets: forward as-is (Caddy auto-detects Upgrade).
+    handle_path /ws/* {
+        reverse_proxy api:8000 {
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-For {remote_host}
+        }
+    }
+
+    # Everything else -> Next.js.
+    handle {
+        reverse_proxy web:3000 {
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-For {remote_host}
+        }
+    }
+
+    log {
+        output stdout
+        format json
+        level INFO
+    }
+}

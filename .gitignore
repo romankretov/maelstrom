@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Node
+node_modules/
+.next/
+out/
+.turbo/
+.pnpm-store/
+*.tsbuildinfo
+.eslintcache
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+!*.example.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local volumes
+data/
+logs/
+.cache/
+
+# Maelstrom local
+.image-tag
+.image-tag.bak
+infra/cloudflared/credentials.json

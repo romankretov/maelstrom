@@ -1,0 +1,79 @@
+name: maelstrom-dev
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-maelstrom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev}
+      POSTGRES_DB: ${POSTGRES_DB:-maelstrom}
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-maelstrom}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    environment:
+      MAELSTROM_ENV: development
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-maelstrom}:${POSTGRES_PASSWORD:-dev}@postgres:5432/${POSTGRES_DB:-maelstrom}
+      REDIS_URL: redis://redis:6379/0
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    volumes:
+      - ./apps/api/src:/app/src
+      - ./apps/api/alembic:/app/alembic
+    command: ["uvicorn", "maelstrom_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/src"]
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    env_file: .env
+    environment:
+      MAELSTROM_ENV: development
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-maelstrom}:${POSTGRES_PASSWORD:-dev}@postgres:5432/${POSTGRES_DB:-maelstrom}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    volumes:
+      - ./apps/worker/src:/app/src
+    command: ["arq", "maelstrom_worker.main.WorkerSettings", "--watch", "/app/src"]
+
+  web:
+    image: node:22-alpine
+    working_dir: /app
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    ports: ["3000:3000"]
+    volumes:
+      - ./apps/web:/app
+      - web_node_modules:/app/node_modules
+    command: ["sh", "-c", "npm install && npm run dev"]
+
+volumes:
+  pgdata:
+  redisdata:
+  web_node_modules:
