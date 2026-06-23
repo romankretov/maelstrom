@@ -5,6 +5,7 @@ Flow:
   2. User scans QR in authenticator app, then calls POST /auth/totp/confirm with a code
   3. Subsequent sensitive operations require POST /auth/totp/verify with current code
 """
+
 import base64
 import io
 import secrets

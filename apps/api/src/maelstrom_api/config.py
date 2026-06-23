@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     database_url: PostgresDsn = Field(alias="DATABASE_URL")
     redis_url: RedisDsn = Field(alias="REDIS_URL")
 
-    api_host: str = Field(default="0.0.0.0", alias="API_HOST")
+    api_host: str = Field(default="0.0.0.0", alias="API_HOST")  # noqa: S104
     api_port: int = Field(default=8000, alias="API_PORT")
     api_secret_key: SecretStr = Field(alias="API_SECRET_KEY")
     api_cors_origins: str = Field(default="", alias="API_CORS_ORIGINS")

@@ -32,7 +32,10 @@ export default function LoginPage() {
       setToken(resp.access_token);
       router.push("/dashboard");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String((err as { message?: string }).message ?? "Login failed");
+      const msg =
+        err instanceof Error
+          ? err.message
+          : String((err as { message?: string }).message ?? "Login failed");
       setError(msg);
     } finally {
       setLoading(false);

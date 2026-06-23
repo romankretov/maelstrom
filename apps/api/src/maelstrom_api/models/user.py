@@ -6,10 +6,10 @@ from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTableUUID
 from sqlalchemy import DateTime, Enum, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..db import Base
+from maelstrom_api.db import Base
 
 
-class Role(str, enum.Enum):
+class Role(enum.StrEnum):
     ADMIN = "admin"
     TRADER = "trader"
     VIEWER = "viewer"

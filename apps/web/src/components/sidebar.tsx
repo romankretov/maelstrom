@@ -2,14 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Activity,
-  LayoutDashboard,
-  LineChart,
-  Settings,
-  Signal,
-  Wallet,
-} from "lucide-react";
+import { Activity, LayoutDashboard, LineChart, Settings, Signal, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ITEMS = [

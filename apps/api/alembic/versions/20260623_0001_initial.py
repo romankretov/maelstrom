@@ -4,6 +4,7 @@ Revision ID: 0001_initial
 Revises:
 Create Date: 2026-06-23
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -31,7 +32,10 @@ def upgrade() -> None:
     )
     # Tell SQLAlchemy: enum already exists, don't issue CREATE TYPE during create_table.
     user_role = postgresql.ENUM(
-        "admin", "trader", "viewer", "readonly",
+        "admin",
+        "trader",
+        "viewer",
+        "readonly",
         name="user_role",
         create_type=False,
     )

@@ -2,11 +2,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
 export type ApiError = { status: number; message: string };
 
-export async function api<T>(
-  path: string,
-  init: RequestInit = {},
-  token?: string,
-): Promise<T> {
+export async function api<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(init.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");

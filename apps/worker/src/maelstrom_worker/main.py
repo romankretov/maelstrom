@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, ClassVar
 
 import structlog
 from arq import cron
@@ -27,8 +27,8 @@ def _redis_settings() -> RedisSettings:
 class WorkerSettings:
     """arq entrypoint. Run with: `arq maelstrom_worker.main.WorkerSettings`."""
 
-    functions = [tasks.heartbeat]
-    cron_jobs = [cron(tasks.heartbeat, second=0)]  # every minute
+    functions: ClassVar = [tasks.heartbeat]
+    cron_jobs: ClassVar = [cron(tasks.heartbeat, second=0)]  # every minute
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = _redis_settings()

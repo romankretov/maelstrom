@@ -6,7 +6,7 @@ from sqlalchemy import JSON, DateTime, String, func
 from sqlalchemy.dialects.postgresql import INET, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..db import Base
+from maelstrom_api.db import Base
 
 
 class AuditLog(Base):

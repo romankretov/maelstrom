@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..db import get_session
+from maelstrom_api.db import get_session
 
 router = APIRouter(tags=["health"])
 
