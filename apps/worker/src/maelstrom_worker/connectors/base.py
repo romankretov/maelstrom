@@ -69,15 +69,16 @@ class MarketDataSource(Protocol):
         """Return bars in the [since, until) range, paginated upstream as needed."""
         ...
 
-    async def stream_ohlcv(
+    def stream_ohlcv(
         self,
         symbol: str,
         timeframe: str,
     ) -> AsyncIterator[Bar]:
-        """Yield bars as they close. Implementations may also yield partial bars
-        on tick; the caller decides whether to upsert mid-bar."""
+        """Yield bars as they tick + close. Async generator — not `async def` in
+        the Protocol since the *factory* returns AsyncIterator directly (no
+        await needed)."""
         ...
 
-    async def stream_trades(self, symbol: str) -> AsyncIterator[Trade]:
-        """Yield trades as they print."""
+    def stream_trades(self, symbol: str) -> AsyncIterator[Trade]:
+        """Yield trades as they print. See stream_ohlcv re: signature."""
         ...
