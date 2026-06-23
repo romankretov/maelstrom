@@ -9,6 +9,14 @@ from .market import (
     Timeframe,
     Trade,
 )
+from .strategy import (
+    BacktestEquity,
+    BacktestRun,
+    BacktestStatus,
+    BacktestTrade,
+    Strategy,
+    StrategyVersion,
+)
 from .user import Role, User
 
 __all__ = [
@@ -17,9 +25,15 @@ __all__ = [
     "AuditLog",
     "BackfillJob",
     "BackfillStatus",
+    "BacktestEquity",
+    "BacktestRun",
+    "BacktestStatus",
+    "BacktestTrade",
     "Instrument",
     "Role",
     "Source",
+    "Strategy",
+    "StrategyVersion",
     "Timeframe",
     "Trade",
     "User",
