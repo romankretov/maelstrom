@@ -15,6 +15,8 @@ class AccountOut(BaseModel):
     owner_id: uuid.UUID | None = None
     starting_capital: Decimal
     is_active: bool
+    killed: bool = False
+    daily_loss_limit_pct: Decimal | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
@@ -24,11 +26,13 @@ class AccountCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     kind: str = Field(default="paper")
     starting_capital: Decimal = Field(default=Decimal("10000"))
+    daily_loss_limit_pct: Decimal | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
 class AccountUpdate(BaseModel):
     is_active: bool | None = None
+    daily_loss_limit_pct: Decimal | None = None
     meta: dict[str, Any] | None = None
 
 

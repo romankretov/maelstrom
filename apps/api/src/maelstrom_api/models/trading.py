@@ -62,6 +62,8 @@ class Account(Base):
     )
     starting_capital: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    killed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    daily_loss_limit_pct: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)
     api_key_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     api_secret_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     meta: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
@@ -106,6 +108,8 @@ class LiveStrategy(Base):
     params: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="paused")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    max_notional_per_symbol: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    max_position_qty: Mapped[Decimal | None] = mapped_column(Numeric(28, 10), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     requester_id: Mapped[uuid.UUID | None] = mapped_column(

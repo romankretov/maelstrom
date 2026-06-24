@@ -5,6 +5,8 @@ export type Account = {
   owner_id: string | null;
   starting_capital: string;
   is_active: boolean;
+  killed: boolean;
+  daily_loss_limit_pct: string | null;
   meta: Record<string, unknown>;
   created_at: string;
   updated_at: string;

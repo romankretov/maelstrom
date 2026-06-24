@@ -85,6 +85,12 @@ async def create_and_start(
         if version is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "strategy has no versions")
 
+    if account.killed:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "account is killed; cannot start new live strategies",
+        )
+
     live = LiveStrategy(
         strategy_id=strategy_id,
         strategy_version_id=version.id,
@@ -93,6 +99,8 @@ async def create_and_start(
         symbols=body.symbols,
         timeframe=body.timeframe,
         params=body.params,
+        max_notional_per_symbol=body.max_notional_per_symbol,
+        max_position_qty=body.max_position_qty,
         status=LiveStatus.PENDING_START.value,
         requester_id=user.id,
     )

@@ -12,6 +12,8 @@ import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from maelstrom_worker.risk import RiskEngine
+
 from .base import Broker, OrderIntent, OrderResult
 
 log = structlog.get_logger()
@@ -103,12 +105,20 @@ class PaperBroker(Broker):
         self,
         session_maker: async_sessionmaker,
         fee_rate: float = DEFAULT_FEE_RATE,
+        risk_engine: RiskEngine | None = None,
     ) -> None:
         self.sm = session_maker
         self.fee_rate = fee_rate
+        self.risk = risk_engine or RiskEngine()
 
     async def submit(self, intent: OrderIntent, last_price: float) -> OrderResult:
         ts = datetime.now(UTC)
+
+        # Pre-trade risk: reject before doing anything else if the account is
+        # killed / over its daily loss / over per-strategy size cap.
+        risk = await self.risk.check(self.sm, intent, last_price)
+        if not risk.ok:
+            return await self._reject(intent, risk.reason or "risk rejected", ts)
 
         # Resolve qty (intent may use notional)
         qty = intent.qty

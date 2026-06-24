@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maelstrom_api import audit
@@ -125,6 +125,8 @@ async def update_account(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not your account")
     if body.is_active is not None:
         acc.is_active = body.is_active
+    if body.daily_loss_limit_pct is not None:
+        acc.daily_loss_limit_pct = body.daily_loss_limit_pct
     if body.meta is not None:
         acc.meta = body.meta
     await audit.record(
@@ -134,6 +136,69 @@ async def update_account(
         target_kind="account",
         target_id=str(account_id),
         payload=body.model_dump(exclude_none=True),
+    )
+    await session.commit()
+    await session.refresh(acc)
+    return acc
+
+
+@router.post("/{account_id}/kill", response_model=AccountOut)
+async def kill_account(
+    account_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> Account:
+    """Hard halt: set killed=true and transition every running/pending strategy
+    on this account to pending_stop. Broker rejects any subsequent order."""
+    acc = await session.get(Account, account_id)
+    if acc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+    if not _can_access(acc, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not your account")
+
+    acc.killed = True
+    await session.execute(
+        text(
+            "UPDATE live_strategies "
+            "   SET status = 'pending_stop', updated_at = now() "
+            " WHERE account_id = :id AND status IN ('running','pending_start')"
+        ),
+        {"id": str(account_id)},
+    )
+    await audit.record(
+        session,
+        action="account.kill",
+        actor_id=user.id,
+        target_kind="account",
+        target_id=str(account_id),
+    )
+    await session.commit()
+    await session.refresh(acc)
+    return acc
+
+
+@router.post("/{account_id}/unkill", response_model=AccountOut)
+async def unkill_account(
+    account_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> Account:
+    """Clear the kill flag. Admin-only — risk equivalent of unlocking the
+    safety on a loaded gun."""
+    if not user.is_superuser:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+    acc = await session.get(Account, account_id)
+    if acc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+    if not _can_access(acc, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not your account")
+    acc.killed = False
+    await audit.record(
+        session,
+        action="account.unkill",
+        actor_id=user.id,
+        target_kind="account",
+        target_id=str(account_id),
     )
     await session.commit()
     await session.refresh(acc)

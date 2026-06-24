@@ -28,6 +28,7 @@ export function RunLiveForm({ strategyId }: { strategyId: string }) {
   const [source, setSource] = useState("binance");
   const [symbols, setSymbols] = useState("BTC-PERP");
   const [timeframe, setTimeframe] = useState("1m");
+  const [maxNotional, setMaxNotional] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,17 +39,21 @@ export function RunLiveForm({ strategyId }: { strategyId: string }) {
     try {
       const acc = accountId || accounts?.[0]?.id;
       if (!acc) throw new Error("No account selected");
+      const body: Record<string, unknown> = {
+        account_id: acc,
+        source,
+        symbols: symbols
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        timeframe,
+      };
+      if (maxNotional.trim()) {
+        body.max_notional_per_symbol = maxNotional.trim();
+      }
       await api<LiveStrategy>(`/live-strategies/strategies/${strategyId}`, {
         method: "POST",
-        body: JSON.stringify({
-          account_id: acc,
-          source,
-          symbols: symbols
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
-          timeframe,
-        }),
+        body: JSON.stringify(body),
       });
       setOpen(false);
       await mutate(`/live-strategies/strategies/${strategyId}`);
@@ -121,6 +126,16 @@ export function RunLiveForm({ strategyId }: { strategyId: string }) {
               <div className="space-y-1 sm:col-span-2">
                 <Label htmlFor="symbols">Symbols (comma-separated)</Label>
                 <Input id="symbols" value={symbols} onChange={(e) => setSymbols(e.target.value)} />
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <Label htmlFor="max-notional">Max notional per symbol ($, optional)</Label>
+                <Input
+                  id="max-notional"
+                  inputMode="decimal"
+                  value={maxNotional}
+                  onChange={(e) => setMaxNotional(e.target.value)}
+                  placeholder="e.g. 5000 — reject if a fill would exceed this"
+                />
               </div>
             </div>
           </div>

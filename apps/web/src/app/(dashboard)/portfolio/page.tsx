@@ -130,6 +130,24 @@ export default function PortfolioPage() {
     );
   }
 
+  const selected = accounts.find((a) => a.id === selectedId);
+
+  async function killOrUnkill(kill: boolean) {
+    if (!selectedId) return;
+    const verb = kill ? "kill" : "unkill";
+    if (kill && !confirm("Halt ALL strategies on this account and block new orders?")) return;
+    try {
+      await api(`/accounts/${selectedId}/${verb}`, { method: "POST" });
+      await Promise.all([mutate("/accounts"), mutate(`/accounts/${selectedId}/portfolio`)]);
+    } catch (e) {
+      alert(
+        e instanceof Error
+          ? e.message
+          : String((e as { message?: string }).message ?? `${verb} failed`),
+      );
+    }
+  }
+
   return (
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-2">
@@ -147,10 +165,42 @@ export default function PortfolioPage() {
               <span className="ml-2 rounded bg-secondary px-1 text-[10px] uppercase text-muted-foreground">
                 {a.kind === "paper" ? "paper" : a.kind.replace("live_hl_", "hl ")}
               </span>
+              {a.killed && (
+                <span className="ml-1 rounded bg-destructive px-1 text-[10px] uppercase text-destructive-foreground">
+                  killed
+                </span>
+              )}
             </Button>
           ))}
         </div>
       </header>
+
+      {selected?.killed && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-destructive bg-destructive/10 px-4 py-3">
+          <div className="text-sm">
+            <p className="font-medium text-destructive">Account killed</p>
+            <p className="text-xs text-muted-foreground">
+              All running strategies are pending_stop. New orders are rejected at the broker.
+            </p>
+          </div>
+          <Button variant="destructive" size="sm" onClick={() => killOrUnkill(false)}>
+            Unkill (admin)
+          </Button>
+        </div>
+      )}
+
+      {selected && !selected.killed && (
+        <div className="flex justify-end">
+          <Button
+            variant="destructive"
+            size="sm"
+            className="h-8"
+            onClick={() => killOrUnkill(true)}
+          >
+            Kill account
+          </Button>
+        </div>
+      )}
 
       {pLoad && <p className="text-sm text-muted-foreground">Loading portfolio…</p>}
       {portfolio && (
