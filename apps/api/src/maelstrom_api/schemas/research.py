@@ -38,3 +38,17 @@ class CorrelationOut(BaseModel):
     # Number of overlapping return samples per pair (square, symmetric).
     samples: list[list[int]]
     computed_at: datetime
+
+
+class FundingPoint(BaseModel):
+    ts: datetime
+    rate: float
+
+
+class FundingHistoryOut(BaseModel):
+    source: str
+    symbol: str
+    days: int
+    points: list[FundingPoint]
+    mean: float | None = None  # average funding rate over the window
+    annualized: float | None = None  # 8h-period * 3 * 365 estimate

@@ -19,6 +19,8 @@ from maelstrom_api.models import User
 from maelstrom_api.schemas.research import (
     CorrelationOut,
     CorrelationRequest,
+    FundingHistoryOut,
+    FundingPoint,
     MarketStats,
 )
 
@@ -223,4 +225,43 @@ async def correlation(
         matrix=matrix,
         samples=samples,
         computed_at=datetime.now(UTC),
+    )
+
+
+# ----------------------------------------------------------------- funding history
+
+
+@router.get("/funding", response_model=FundingHistoryOut)
+async def funding_history(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    source: Annotated[str, Query()],
+    symbol: Annotated[str, Query()],
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
+) -> FundingHistoryOut:
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    rows = (
+        await session.execute(
+            text(
+                "SELECT ts, rate FROM funding_rates "
+                " WHERE source = :s AND symbol = :sym AND ts >= :cutoff "
+                " ORDER BY ts ASC",
+            ),
+            {"s": source, "sym": symbol, "cutoff": cutoff},
+        )
+    ).all()
+    points = [FundingPoint(ts=r[0], rate=float(r[1])) for r in rows]
+    mean: float | None = None
+    annualized: float | None = None
+    if points:
+        mean = sum(p.rate for p in points) / len(points)
+        # Binance/HL pay funding every 8h ⇒ 3 windows/day, 1095/year.
+        annualized = mean * 1095
+    return FundingHistoryOut(
+        source=source,
+        symbol=symbol,
+        days=days,
+        points=points,
+        mean=mean,
+        annualized=annualized,
     )

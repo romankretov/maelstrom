@@ -40,6 +40,20 @@ export function formatPrice(x: number | null | undefined): string {
   return x.toPrecision(4);
 }
 
+export type FundingPoint = {
+  ts: string;
+  rate: number;
+};
+
+export type FundingHistoryOut = {
+  source: string;
+  symbol: string;
+  days: number;
+  points: FundingPoint[];
+  mean: number | null;
+  annualized: number | null;
+};
+
 export function formatCompactNumber(x: number | null | undefined): string {
   if (x == null || !Number.isFinite(x)) return "—";
   return new Intl.NumberFormat(undefined, {

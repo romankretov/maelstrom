@@ -53,6 +53,7 @@ class WorkerSettings:
         tasks.backfill_ohlcv,
         tasks.run_backtest,
         tasks.reconcile_positions,
+        tasks.sync_funding_rates,
         scan_opportunities,
         dispatch_notification,
     ]
@@ -63,6 +64,8 @@ class WorkerSettings:
         cron(tasks.reconcile_positions, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
         # AI opportunity scanner — twice an hour, offset to avoid pileups.
         cron(scan_opportunities, minute={3, 33}),
+        # Funding-rate history — hourly catch-up. Source caps to ~30 perps.
+        cron(tasks.sync_funding_rates, minute=17),
     ]
     on_startup = startup
     on_shutdown = shutdown

@@ -6,6 +6,7 @@ import { fetcher } from "@/lib/api";
 import type { Source, Timeframe } from "@/lib/markets";
 import { InstrumentList } from "@/components/markets/instrument-list";
 import { StatsCard } from "@/components/research/stats-card";
+import { FundingChart } from "@/components/research/funding-chart";
 import { CorrelationMatrix } from "@/components/research/correlation-matrix";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -22,7 +23,7 @@ export default function ResearchPage() {
         <div>
           <h1 className="text-2xl font-semibold">Research</h1>
           <p className="text-sm text-muted-foreground">
-            Symbol stats, correlation across instruments. Funding history coming next.
+            Symbol stats, funding rate history, correlation across instruments.
           </p>
         </div>
         <div className="flex gap-1">
@@ -54,6 +55,7 @@ export default function ResearchPage() {
             timeframe={timeframe}
             onTimeframe={setTimeframe}
           />
+          <FundingChart source={source} symbol={symbol} />
           <CorrelationMatrix source={source} />
         </section>
       </div>

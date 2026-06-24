@@ -17,6 +17,26 @@ Things to verify before relying on them. Tick as you go.
 - [ ] BTC vs ETH on 1h/30d should be > 0.5 (high). Adding stablecoin-stablecoin pair should
       give ~0 / NaN if variance is zero.
 - [ ] Removing a chip from the symbol pill row and recomputing produces a smaller matrix.
+- [ ] Funding chart shows the 30d history after the first `sync_funding_rates` cron tick (
+      every hour at :17). Range pills 7d/14d/30d/90d switch the lookback. Annualized funding
+      reads `mean × 1095` (3 windows/day × 365).
+- [ ] Migration `0009_funding` runs cleanly: `\d funding_rates` shows the table + hypertable.
+- [ ] Trigger a manual sync (won't wait for :17):
+      ```
+      docker compose exec -T worker python - <<PY
+      import asyncio, os
+      from arq import create_pool
+      from arq.connections import RedisSettings
+      async def go():
+          pool = await create_pool(RedisSettings.from_dsn(os.environ['REDIS_URL']))
+          await pool.enqueue_job('sync_funding_rates')
+          print('enqueued')
+          await pool.close()
+      asyncio.run(go())
+      PY
+      ```
+- [ ] `SELECT count(*) FROM funding_rates;` grows after each hourly cron — first run should
+      pull ~90 rows per perp (30d × 3 windows/day) for the top 30 symbols per source.
 
 ## Backtest auto-backfill (untested)
 

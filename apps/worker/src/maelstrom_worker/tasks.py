@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from .connectors import Bar, Instrument, get_source, list_sources
 from .engine import run_backtest_run
+from .funding import FundingPoint, fetch_funding_history
 from .settings import get_settings
 
 log = structlog.get_logger()
@@ -239,6 +240,95 @@ async def reconcile_positions(ctx: dict[str, Any]) -> dict[str, Any]:
         else:
             log.info("reconcile.ok", account=str(acc_id))
     return summary
+
+
+_UPSERT_FUNDING_SQL = text(
+    """
+    INSERT INTO funding_rates (source, symbol, ts, rate)
+    VALUES (:source, :symbol, :ts, :rate)
+    ON CONFLICT (source, symbol, ts) DO UPDATE SET rate = EXCLUDED.rate
+    """,
+)
+
+
+_FUNDING_SOURCES = ("binance", "hyperliquid")
+
+
+async def _upsert_funding(session: AsyncSession, points: list[FundingPoint]) -> int:
+    if not points:
+        return 0
+    await session.execute(
+        _UPSERT_FUNDING_SQL,
+        [{"source": p.source, "symbol": p.symbol, "ts": p.ts, "rate": p.rate} for p in points],
+    )
+    await session.commit()
+    return len(points)
+
+
+async def sync_funding_rates(
+    ctx: dict[str, Any],
+    source: str | None = None,
+    symbols: list[str] | None = None,
+) -> dict[str, int]:
+    """Refresh funding-rate history for active perps.
+
+    Per source: take the latest stored ts and fetch forward. New symbols get
+    backfilled 30 days. Capped at ~30 symbols per source per run so a fresh
+    deploy doesn't hammer the exchange.
+    """
+    targets = [source] if source else list(_FUNDING_SOURCES)
+    counts: dict[str, int] = {}
+    for src_name in targets:
+        if src_name not in _FUNDING_SOURCES:
+            log.warning("funding.unsupported_source", source=src_name)
+            continue
+        target_symbols: list[str]
+        if symbols:
+            target_symbols = list(symbols)
+        else:
+            async with _sm()() as session:
+                rows = (
+                    await session.execute(
+                        text(
+                            "SELECT symbol FROM instruments "
+                            " WHERE source = :s AND kind = 'perp' AND active = TRUE "
+                            " ORDER BY symbol LIMIT 30",
+                        ),
+                        {"s": src_name},
+                    )
+                ).all()
+            target_symbols = [r[0] for r in rows]
+        written = 0
+        for sym in target_symbols:
+            async with _sm()() as session:
+                latest_row = (
+                    await session.execute(
+                        text(
+                            "SELECT MAX(ts) FROM funding_rates "
+                            " WHERE source = :s AND symbol = :sym",
+                        ),
+                        {"s": src_name, "sym": sym},
+                    )
+                ).first()
+            latest = latest_row[0] if latest_row else None
+            since = (latest or (datetime.now(UTC) - timedelta(days=30))) + timedelta(seconds=1)
+            if since >= datetime.now(UTC):
+                continue
+            try:
+                points = await fetch_funding_history(src_name, sym, since)
+            except Exception as e:
+                log.warning(
+                    "funding.fetch_failed",
+                    source=src_name,
+                    symbol=sym,
+                    error=str(e),
+                )
+                continue
+            async with _sm()() as session:
+                written += await _upsert_funding(session, points)
+        counts[src_name] = written
+        log.info("funding.sync.done", source=src_name, rows=written)
+    return counts
 
 
 async def run_backtest(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:
