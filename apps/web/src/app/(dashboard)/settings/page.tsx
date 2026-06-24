@@ -130,19 +130,22 @@ function ProviderCard({ id, label }: { id: "anthropic" | "openai"; label: string
   );
 }
 
+import { NotificationsCard } from "@/components/settings/notifications-card";
+
 export default function SettingsPage() {
   return (
     <div className="space-y-4">
       <header>
         <h1 className="text-2xl font-semibold">Settings</h1>
         <p className="text-sm text-muted-foreground">
-          API keys are encrypted at rest with the VPS master key.
+          API keys + secrets are encrypted at rest with the VPS master key.
         </p>
       </header>
       <div className="grid gap-4 lg:grid-cols-2">
         {PROVIDERS.map((p) => (
           <ProviderCard key={p.id} id={p.id} label={p.label} />
         ))}
+        <NotificationsCard />
       </div>
     </div>
   );

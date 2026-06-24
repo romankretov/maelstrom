@@ -10,6 +10,7 @@ from .market import (
     Timeframe,
     Trade,
 )
+from .notification import ChannelKind, NotificationChannel, NotificationEvent
 from .signal import Signal
 from .strategy import (
     BacktestEquity,
@@ -45,12 +46,15 @@ __all__ = [
     "BacktestRun",
     "BacktestStatus",
     "BacktestTrade",
+    "ChannelKind",
     "Fill",
     "Instrument",
     "LLMCall",
     "LLMProvider",
     "LiveStatus",
     "LiveStrategy",
+    "NotificationChannel",
+    "NotificationEvent",
     "Order",
     "OrderStatus",
     "Position",

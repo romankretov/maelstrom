@@ -6,6 +6,7 @@ from arq.connections import RedisSettings
 
 from . import tasks
 from .live import manager as live_manager
+from .notify import dispatch_notification
 from .scanner import scan_opportunities
 from .settings import get_settings
 from .streams import manager as stream_manager
@@ -53,6 +54,7 @@ class WorkerSettings:
         tasks.run_backtest,
         tasks.reconcile_positions,
         scan_opportunities,
+        dispatch_notification,
     ]
     cron_jobs: ClassVar = [
         cron(tasks.heartbeat, second=0),  # every minute
