@@ -6,6 +6,7 @@ from arq.connections import RedisSettings
 
 from . import tasks
 from .live import manager as live_manager
+from .scanner import scan_opportunities
 from .settings import get_settings
 from .streams import manager as stream_manager
 
@@ -50,10 +51,16 @@ class WorkerSettings:
         tasks.sync_instruments,
         tasks.backfill_ohlcv,
         tasks.run_backtest,
+        tasks.reconcile_positions,
+        scan_opportunities,
     ]
     cron_jobs: ClassVar = [
         cron(tasks.heartbeat, second=0),  # every minute
         cron(tasks.sync_instruments, hour=3, minute=0),  # daily 03:00 UTC
+        # Position reconciliation against Hyperliquid every 5 min.
+        cron(tasks.reconcile_positions, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
+        # AI opportunity scanner — twice an hour, offset to avoid pileups.
+        cron(scan_opportunities, minute={3, 33}),
     ]
     on_startup = startup
     on_shutdown = shutdown
