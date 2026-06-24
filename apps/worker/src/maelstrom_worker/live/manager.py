@@ -20,7 +20,7 @@ import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from maelstrom_worker.broker import PaperBroker
+from maelstrom_worker.broker import Broker, HyperliquidBroker, PaperBroker
 from maelstrom_worker.settings import get_settings
 from maelstrom_worker.streams import manager as stream_manager
 
@@ -139,22 +139,41 @@ class LiveManager:
         sm = await self._ensure_db()
         redis = await self._ensure_redis()
 
-        # Look up the (source, symbol, tf) so we can guarantee a stream exists.
+        # Look up the (source, symbol, tf, account.kind) so we can route to
+        # the right broker and guarantee an upstream stream exists.
         async with sm() as session:
             row = (
                 await session.execute(
-                    text("SELECT source, symbols, timeframe FROM live_strategies WHERE id = :id"),
+                    text(
+                        "SELECT ls.source, ls.symbols, ls.timeframe, "
+                        "       ls.account_id, a.kind "
+                        "  FROM live_strategies ls "
+                        "  JOIN accounts a ON a.id = ls.account_id "
+                        " WHERE ls.id = :id"
+                    ),
                     {"id": live_id},
                 )
             ).first()
         if row is None:
             log.warning("live.spawn.missing_row", id=live_id)
             return
-        source, symbols, timeframe = row[0], list(row[1]), row[2]
+        source, symbols, timeframe, account_id, account_kind = (
+            row[0],
+            list(row[1]),
+            row[2],
+            str(row[3]),
+            row[4],
+        )
         for sym in symbols:
             stream_manager.start(source, sym, timeframe)
 
-        broker = PaperBroker(sm)  # P3.3 swaps in HyperliquidBroker per account.kind
+        broker: Broker
+        if account_kind.startswith("live_hl_"):
+            broker = HyperliquidBroker(sm, account_id=account_id)
+            log.info("live.broker.hyperliquid", account=account_id, kind=account_kind)
+        else:
+            broker = PaperBroker(sm)
+            log.info("live.broker.paper", account=account_id)
         runner = LiveRunner(live_id, broker, sm, redis)
         self._runners[live_id] = runner
         self._tasks[live_id] = asyncio.create_task(

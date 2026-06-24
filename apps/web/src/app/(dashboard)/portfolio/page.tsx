@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CredentialsCard } from "@/components/portfolio/credentials-form";
 import { cn } from "@/lib/utils";
 
 function Metric({
@@ -201,6 +202,8 @@ export default function PortfolioPage() {
           </Button>
         </div>
       )}
+
+      {selected && selected.kind !== "paper" && <CredentialsCard accountId={selected.id} />}
 
       {pLoad && <p className="text-sm text-muted-foreground">Loading portfolio…</p>}
       {portfolio && (

@@ -162,6 +162,85 @@ async def _upsert_bars(session: AsyncSession, bars: list[Bar]) -> int:
     return len(payload)
 
 
+async def reconcile_positions(ctx: dict[str, Any]) -> dict[str, Any]:
+    """For every active live (Hyperliquid) account, compare local positions
+    table to the exchange. Log + return any mismatches. Phase 6 hooks this
+    into Telegram/Discord alerts.
+
+    Read-only: we never write the exchange state back into our DB here —
+    that's the job of fills landing through the broker.
+    """
+    import ccxt.pro as ccxtpro
+
+    from .crypto import decrypt_str
+
+    summary: dict[str, Any] = {"checked": 0, "mismatches": []}
+    async with _sm()() as session:
+        accs = (
+            await session.execute(
+                text(
+                    "SELECT id, kind, api_key_enc, meta "
+                    "  FROM accounts "
+                    " WHERE is_active = TRUE AND kind LIKE 'live_hl_%' "
+                    "   AND api_key_enc IS NOT NULL",
+                ),
+            )
+        ).all()
+    for acc_id, kind, api_key_enc, meta in accs:
+        wallet = (meta or {}).get("wallet_address")
+        if not wallet or not api_key_enc:
+            continue
+        try:
+            client = ccxtpro.hyperliquid(
+                {
+                    "walletAddress": wallet,
+                    "privateKey": decrypt_str(bytes(api_key_enc)),
+                    "options": {"defaultType": "swap"},
+                    **({"test": True} if kind == "live_hl_testnet" else {}),
+                },
+            )
+            try:
+                exch_positions = await client.fetch_positions()
+            finally:
+                await client.close()
+        except Exception as e:
+            log.warning("reconcile.fetch_failed", account=str(acc_id), error=str(e))
+            continue
+
+        # Build {symbol_normalized: qty_signed} from exchange.
+        exch_map: dict[str, float] = {}
+        for p in exch_positions:
+            raw_sym = p.get("symbol") or ""
+            base = raw_sym.split("/", 1)[0]
+            sym = f"{base}-PERP"
+            exch_map[sym] = float(p.get("contracts") or 0) * (
+                1 if (p.get("side") or "long") == "long" else -1
+            )
+
+        async with _sm()() as session:
+            local_rows = (
+                await session.execute(
+                    text("SELECT symbol, qty FROM positions WHERE account_id = :id"),
+                    {"id": str(acc_id)},
+                )
+            ).all()
+        local_map = {sym: float(qty) for sym, qty in local_rows}
+
+        mism: list[dict[str, Any]] = []
+        for sym in set(exch_map) | set(local_map):
+            l_qty = local_map.get(sym, 0.0)
+            e_qty = exch_map.get(sym, 0.0)
+            if abs(l_qty - e_qty) > 1e-9:
+                mism.append({"symbol": sym, "local": l_qty, "exchange": e_qty})
+        summary["checked"] += 1
+        if mism:
+            summary["mismatches"].append({"account_id": str(acc_id), "diffs": mism})
+            log.warning("reconcile.mismatch", account=str(acc_id), diffs=mism)
+        else:
+            log.info("reconcile.ok", account=str(acc_id))
+    return summary
+
+
 async def run_backtest(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:
     """Execute a backtest_runs row to completion."""
     log.info("backtest.task.start", run_id=run_id)

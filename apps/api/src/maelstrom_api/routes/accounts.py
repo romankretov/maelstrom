@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maelstrom_api import audit
+from maelstrom_api import audit, crypto
 from maelstrom_api.auth import current_active_user
 from maelstrom_api.db import get_session
 from maelstrom_api.models import (
@@ -19,6 +19,7 @@ from maelstrom_api.models import (
     Position,
     User,
 )
+from maelstrom_api.schemas.credentials import CredentialState, HyperliquidCredsIn
 from maelstrom_api.schemas.trading import (
     AccountCreate,
     AccountOut,
@@ -63,13 +64,26 @@ async def create_account(
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(current_active_user)],
 ) -> Account:
-    # Only paper allowed for non-admins via plain create. Live accounts get
-    # gated in P3.2 (require admin role + per-account toggle).
-    if body.kind != "paper" and not user.is_superuser:
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN,
-            "only paper accounts can be created via this endpoint",
-        )
+    # Account-kind gates:
+    #   paper           -> anyone
+    #   live_hl_testnet -> admin only
+    #   live_hl_main    -> admin AND env MAELSTROM_ALLOW_MAINNET=1
+    if body.kind == "live_hl_main":
+        import os as _os
+
+        if _os.environ.get("MAELSTROM_ALLOW_MAINNET", "").lower() not in ("1", "true", "yes"):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "mainnet accounts disabled. Set MAELSTROM_ALLOW_MAINNET=1 on the VPS first.",
+            )
+        if not user.is_superuser:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "mainnet requires admin")
+    elif body.kind != "paper":
+        if not user.is_superuser:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "non-paper accounts require admin",
+            )
     existing = (
         await session.execute(select(Account).where(Account.name == body.name))
     ).scalar_one_or_none()
@@ -140,6 +154,84 @@ async def update_account(
     await session.commit()
     await session.refresh(acc)
     return acc
+
+
+@router.get("/{account_id}/credentials", response_model=CredentialState)
+async def get_credentials_state(
+    account_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> CredentialState:
+    acc = await session.get(Account, account_id)
+    if acc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+    if not _can_access(acc, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not your account")
+    return CredentialState(
+        has_credentials=bool(acc.api_key_enc),
+        wallet_address=(acc.meta or {}).get("wallet_address"),
+    )
+
+
+@router.post("/{account_id}/credentials", response_model=CredentialState)
+async def set_credentials(
+    account_id: uuid.UUID,
+    body: HyperliquidCredsIn,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> CredentialState:
+    """Encrypt + store Hyperliquid private key + wallet address. Admin only."""
+    if not user.is_superuser:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+    acc = await session.get(Account, account_id)
+    if acc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+    if not _can_access(acc, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not your account")
+    if not acc.kind.startswith("live_hl_"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "account is not Hyperliquid-kind")
+
+    acc.api_key_enc = crypto.encrypt_str(body.private_key)
+    new_meta = dict(acc.meta or {})
+    new_meta["wallet_address"] = body.wallet_address
+    acc.meta = new_meta
+    await audit.record(
+        session,
+        action="account.credentials.set",
+        actor_id=user.id,
+        target_kind="account",
+        target_id=str(account_id),
+        payload={"wallet_address": body.wallet_address},  # plaintext key never logged
+    )
+    await session.commit()
+    return CredentialState(has_credentials=True, wallet_address=body.wallet_address)
+
+
+@router.delete("/{account_id}/credentials", status_code=status.HTTP_204_NO_CONTENT)
+async def clear_credentials(
+    account_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> None:
+    if not user.is_superuser:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+    acc = await session.get(Account, account_id)
+    if acc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+    if not _can_access(acc, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not your account")
+    acc.api_key_enc = None
+    new_meta = dict(acc.meta or {})
+    new_meta.pop("wallet_address", None)
+    acc.meta = new_meta
+    await audit.record(
+        session,
+        action="account.credentials.clear",
+        actor_id=user.id,
+        target_kind="account",
+        target_id=str(account_id),
+    )
+    await session.commit()
 
 
 @router.post("/{account_id}/kill", response_model=AccountOut)
