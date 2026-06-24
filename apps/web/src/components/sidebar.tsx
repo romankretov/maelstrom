@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, LayoutDashboard, LineChart, Settings, Signal, Wallet } from "lucide-react";
+import {
+  Activity,
+  LayoutDashboard,
+  LineChart,
+  MessageSquareText,
+  Settings,
+  Signal,
+  Wallet,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ITEMS = [
@@ -11,6 +19,7 @@ const ITEMS = [
   { href: "/strategies", label: "Strategies", icon: Activity },
   { href: "/portfolio", label: "Portfolio", icon: Wallet },
   { href: "/signals", label: "Signals", icon: Signal },
+  { href: "/journal", label: "Journal", icon: MessageSquareText },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 

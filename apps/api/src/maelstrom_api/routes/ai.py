@@ -11,9 +11,26 @@ from maelstrom_api import audit, crypto
 from maelstrom_api.auth import current_active_user
 from maelstrom_api.db import get_session
 from maelstrom_api.llm import get_router
-from maelstrom_api.llm.prompts import STRATEGY_GEN_SYSTEM, STRATEGY_OPTIMIZE_SYSTEM
-from maelstrom_api.models import BacktestRun, LLMCall, LLMProvider, StrategyVersion, User
+from maelstrom_api.llm.prompts import (
+    JOURNAL_ASSISTANT_SYSTEM,
+    STRATEGY_GEN_SYSTEM,
+    STRATEGY_OPTIMIZE_SYSTEM,
+)
+from maelstrom_api.models import (
+    Account,
+    BacktestRun,
+    Fill,
+    LLMCall,
+    LLMProvider,
+    Position,
+    Signal,
+    Strategy,
+    StrategyVersion,
+    User,
+)
 from maelstrom_api.schemas.llm import (
+    JournalRequest,
+    JournalResponse,
     LLMCallOut,
     LLMProviderOut,
     LLMProviderUpsert,
@@ -220,6 +237,186 @@ async def optimize_strategy(
     return StrategyOptimizeResponse(
         rationale=rationale or "(model did not emit a rationale section)",
         code=code,
+        provider=result.provider,
+        model=result.model,
+        prompt_tokens=result.prompt_tokens,
+        completion_tokens=result.completion_tokens,
+        cached_tokens=result.cached_tokens,
+        cost_usd=result.cost_usd,
+        duration_ms=result.duration_ms,
+    )
+
+
+# ----------------------------------------------------------------- journal
+
+
+async def _build_journal_context(
+    session: AsyncSession,
+    user: User,
+    body: JournalRequest,
+) -> str:
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import select
+
+    cutoff = datetime.now(UTC) - timedelta(days=body.days)
+    parts: list[str] = []
+
+    if body.account_id is not None:
+        acc = await session.get(Account, body.account_id)
+        if acc is None or (not user.is_superuser and acc.owner_id != user.id):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "not your account")
+        positions = list(
+            (
+                await session.execute(
+                    select(Position).where(Position.account_id == body.account_id),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        fills = list(
+            (
+                await session.execute(
+                    select(Fill)
+                    .where(Fill.account_id == body.account_id)
+                    .where(Fill.ts >= cutoff)
+                    .order_by(desc(Fill.ts))
+                    .limit(100),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        parts.append(f"## Account: {acc.name} ({acc.kind})")
+        parts.append(
+            f"starting_capital={acc.starting_capital} · killed={acc.killed} · "
+            f"daily_loss_limit_pct={acc.daily_loss_limit_pct}",
+        )
+        open_pos = [p for p in positions if p.qty != 0]
+        if open_pos:
+            parts.append("\n### Open positions")
+            for p in open_pos:
+                ur = (
+                    (p.last_price - p.avg_price) * p.qty
+                    if p.qty > 0
+                    else (p.avg_price - p.last_price) * (-p.qty)
+                )
+                parts.append(
+                    f"- {p.symbol}: qty={p.qty} avg={p.avg_price} last={p.last_price} "
+                    f"unrealized={ur:.2f} realized_total={p.realized_pnl}",
+                )
+        else:
+            parts.append("\n### Open positions\n(none)")
+        if fills:
+            parts.append(f"\n### Fills (last {body.days}d, showing {len(fills)})")
+            for f in fills:
+                parts.append(
+                    f"- {f.ts.isoformat(timespec='minutes')} {f.symbol} {f.side} qty={f.qty} "
+                    f"price={f.price} fee={f.fee} pnl={f.pnl}",
+                )
+        else:
+            parts.append(f"\n### Fills (last {body.days}d)\n(none)")
+
+    if body.strategy_id is not None:
+        s = await session.get(Strategy, body.strategy_id)
+        if s is None or (not user.is_superuser and s.owner_id != user.id):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "not your strategy")
+        latest = (
+            await session.execute(
+                select(StrategyVersion)
+                .where(StrategyVersion.strategy_id == body.strategy_id)
+                .order_by(desc(StrategyVersion.version))
+                .limit(1),
+            )
+        ).scalar_one_or_none()
+        parts.append(f"\n## Strategy: {s.name} (v{latest.version if latest else '?'})")
+        parts.append(s.description or "(no description)")
+        if latest:
+            parts.append("\n### Code\n```python\n" + latest.code + "\n```")
+        runs = list(
+            (
+                await session.execute(
+                    select(BacktestRun)
+                    .where(BacktestRun.strategy_id == body.strategy_id)
+                    .order_by(desc(BacktestRun.created_at))
+                    .limit(5),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if runs:
+            parts.append("\n### Recent backtests")
+            for r in runs:
+                parts.append(
+                    f"- {r.created_at.isoformat(timespec='minutes')} "
+                    f"{','.join(r.symbols)} {r.timeframe} status={r.status} "
+                    f"metrics={r.metrics}",
+                )
+
+    signals = list(
+        (
+            await session.execute(
+                select(Signal).order_by(desc(Signal.ts)).limit(10),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if signals:
+        parts.append("\n## Recent AI signals")
+        for sig in signals:
+            parts.append(
+                f"- {sig.ts.isoformat(timespec='minutes')} {sig.symbol} {sig.direction} "
+                f"score={sig.score} conf={sig.confidence} — {sig.rationale}",
+            )
+
+    return "\n".join(parts) if parts else "(no context available)"
+
+
+@router.post("/journal/ask", response_model=JournalResponse)
+async def journal_ask(
+    body: JournalRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> JournalResponse:
+    if body.account_id is None and body.strategy_id is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "scope at least one of account_id or strategy_id",
+        )
+    context = await _build_journal_context(session, user, body)
+    user_msg = (
+        "## Question\n"
+        f"{body.question}\n\n"
+        "## Context\n"
+        f"{context}\n\n"
+        "Answer the question based strictly on the context above."
+    )
+    rtr = get_router()
+    try:
+        result = await rtr.complete(
+            session,
+            provider=body.provider,
+            purpose="journal_ask",
+            system=JOURNAL_ASSISTANT_SYSTEM,
+            user_message=user_msg,
+            user_id=user.id,
+            model=body.model,
+            max_tokens=2048,
+            temperature=0.4,
+        )
+    except RuntimeError as e:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"LLM call failed: {e}. Configure the provider key in Settings.",
+        ) from e
+    except Exception as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"LLM error: {e!s}"[:400]) from e
+
+    return JournalResponse(
+        answer=result.text,
         provider=result.provider,
         model=result.model,
         prompt_tokens=result.prompt_tokens,

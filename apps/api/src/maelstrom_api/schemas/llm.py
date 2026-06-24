@@ -56,6 +56,26 @@ class StrategyOptimizeResponse(BaseModel):
     duration_ms: int
 
 
+class JournalRequest(BaseModel):
+    question: str = Field(min_length=4, max_length=2000)
+    account_id: uuid.UUID | None = None
+    strategy_id: uuid.UUID | None = None
+    days: int = Field(default=14, ge=1, le=180)
+    provider: str = Field(default="anthropic")
+    model: str | None = None
+
+
+class JournalResponse(BaseModel):
+    answer: str
+    provider: str
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    cached_tokens: int
+    cost_usd: float
+    duration_ms: int
+
+
 class LLMCallOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
