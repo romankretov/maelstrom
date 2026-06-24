@@ -221,4 +221,31 @@ async def scan_opportunities(ctx: dict[str, Any]) -> dict[str, Any]:
         )
         await session.commit()
     log.info("scanner.persisted", count=len(signals), call_id=result.call_id)
+
+    # Notify subscribers about the highest-conviction signal in this batch.
+    top = max(signals, key=lambda s: abs(float(s["score"])), default=None)
+    if top is not None and ctx.get("redis") is not None:
+        from .notify import notify_all
+
+        body_text = (
+            f"📡 *Top signal* {top['symbol']} *{top['direction'].upper()}*  "
+            f"score={top['score']:+.0f} conf={top['confidence']}  "
+            f"horizon={top['horizon']}\n"
+            f"_{top['rationale']}_"
+        )
+        try:
+            await notify_all(
+                sm,
+                ctx["redis"],
+                "signal_top",
+                {
+                    "text": body_text,
+                    "symbol": top["symbol"],
+                    "direction": top["direction"],
+                    "score": top["score"],
+                },
+            )
+        except Exception as e:
+            log.warning("scanner.notify_failed", error=str(e))
+
     return {"status": "ok", "signals": len(signals), "call_id": result.call_id}

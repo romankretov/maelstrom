@@ -4,6 +4,7 @@ import uuid
 from decimal import Decimal
 from typing import Annotated
 
+from arq import ArqRedis
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +20,8 @@ from maelstrom_api.models import (
     Position,
     User,
 )
+from maelstrom_api.notify import notify_all
+from maelstrom_api.routes.markets import get_arq_pool
 from maelstrom_api.schemas.credentials import CredentialState, HyperliquidCredsIn
 from maelstrom_api.schemas.trading import (
     AccountCreate,
@@ -239,6 +242,7 @@ async def kill_account(
     account_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(current_active_user)],
+    arq: Annotated[ArqRedis, Depends(get_arq_pool)],
 ) -> Account:
     """Hard halt: set killed=true and transition every running/pending strategy
     on this account to pending_stop. Broker rejects any subsequent order."""
@@ -265,6 +269,20 @@ async def kill_account(
         target_id=str(account_id),
     )
     await session.commit()
+
+    # Notify subscribers (best effort, won't fail the request).
+    await notify_all(
+        session,
+        arq,
+        "kill_account",
+        {
+            "text": f"🛑 *Account killed*: `{acc.name}` ({acc.kind}). "
+            "All running strategies pending stop.",
+            "account_id": str(account_id),
+            "account_name": acc.name,
+        },
+        user_id=str(user.id) if user.id else None,
+    )
     await session.refresh(acc)
     return acc
 
