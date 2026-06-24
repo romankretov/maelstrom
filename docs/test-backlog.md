@@ -54,6 +54,27 @@ Things to verify before relying on them. Tick as you go.
       `pending_start` via `LiveManager._resume_orphans()`.
 - [ ] Restart preserves paper positions (they live in Postgres, but verify after a deploy).
 
+## Phase 6 — notifications (untested)
+
+- [ ] Migration `0008_notifications` runs cleanly.
+- [ ] **Telegram path:**
+      - Create a bot via @BotFather, copy the token.
+      - Message @userinfobot on Telegram for your chat_id.
+      - In `/settings` → Notifications → Add channel → Telegram → label,
+        chat_id, bot token → Save.
+      - Click **Test** on the row → message arrives in Telegram in <5s.
+- [ ] **Discord path:**
+      - In a Discord server, channel settings → Integrations → Webhooks → New.
+      - Copy webhook URL.
+      - Add channel in UI → Discord → webhook URL → Save → Test → message lands.
+- [ ] Toggle event chips on the channel row; only enabled events fire.
+- [ ] Disable (red pill) blocks all sends until re-enabled.
+- [ ] Quiet hours: not yet UI-editable; verify via API PATCH that
+      `quiet_start=22:00 quiet_end=07:00` suppresses sends during that
+      window and logs `notify` task return status=`quiet_hours`.
+- [ ] Worker log shows `notify.sent kind=telegram event=test` on test.
+- [ ] No plaintext bot token in any audit_log row.
+
 ## Phase 5.4 — trade journal assistant (untested)
 
 - [ ] **Sidebar has "Journal"** link between Signals and Settings.
