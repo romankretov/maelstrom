@@ -34,12 +34,47 @@ The workflow:
 
 ## Backup
 
-Phase 7 wires automated backups. Until then, manual:
+A `backup` container in `compose.prod.yml` runs `pg_dump` once per
+`BACKUP_INTERVAL` (default 24h) and writes gzipped dumps to
+`/opt/maelstrom/backups/` on the VPS. Retention is
+`BACKUP_RETENTION_DAYS` (default 14).
 
+For offsite copies, set `RCLONE_REMOTE_PATH` (e.g. `b2:bucket/maelstrom`)
+and `RCLONE_CONFIG_BASE64` in `.env`. See `.env.example` for the rclone
+setup.
+
+To **manually dump right now** without waiting for the next cycle:
 ```bash
 ssh deploy@maelstromhub.com
-docker compose -f /opt/maelstrom/compose.prod.yml exec -T postgres \
-  pg_dump -U $POSTGRES_USER -d $POSTGRES_DB | gzip > /tmp/maelstrom-$(date +%F).sql.gz
-sudo cp /etc/maelstrom/master.key /tmp/master.key
-# Then scp both files somewhere safe.
+cd /opt/maelstrom
+docker compose -f compose.prod.yml exec -T postgres \
+  pg_dump -U "$(grep ^POSTGRES_USER .env | cut -d= -f2)" \
+          -d "$(grep ^POSTGRES_DB .env | cut -d= -f2)" \
+  | gzip > "/opt/maelstrom/backups/manual-$(date -u +%FT%H%MZ).sql.gz"
 ```
+
+To **restore from a backup** (DESTRUCTIVE — drops + recreates public
+schema, then re-runs the dump):
+```bash
+ssh deploy@maelstromhub.com
+cd /opt/maelstrom
+./infra/scripts/restore.sh                          # newest backup
+./infra/scripts/restore.sh maelstrom-2026...sql.gz  # specific file
+```
+The script will prompt you to type the filename to confirm.
+
+### The master key
+
+`/etc/maelstrom/master.key` encrypts everything in `accounts.api_key_enc`,
+`llm_providers.api_key_enc`, and `notification_channels.secret_enc`. If
+you lose it, ALL of those become unrecoverable — even with a fresh DB
+restore.
+
+Stash a copy off-VPS the moment you bootstrap:
+```bash
+sudo base64 < /etc/maelstrom/master.key
+# paste into 1Password / similar
+```
+
+To **restore the master key on a new VPS**, write the decoded bytes back
+to `/etc/maelstrom/master.key`, then `chmod 0444` it.

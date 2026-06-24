@@ -119,6 +119,31 @@ services:
     profiles: ["tools"]
     command: ["alembic", "upgrade", "head"]
 
+  # Postgres backup daemon. Dumps once per BACKUP_INTERVAL (default 24h) to
+  # /opt/maelstrom/backups on the host. Optional offsite copy via rclone
+  # if RCLONE_REMOTE_PATH is set in .env.
+  backup:
+    build:
+      context: ./infra/backup
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-86400}
+      RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      RCLONE_REMOTE_PATH: ${RCLONE_REMOTE_PATH:-}
+      RCLONE_CONFIG_BASE64: ${RCLONE_CONFIG_BASE64:-}
+    volumes:
+      - /opt/maelstrom/backups:/backups
+    depends_on:
+      postgres: { condition: service_healthy }
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
 volumes:
   pgdata:
   redisdata:

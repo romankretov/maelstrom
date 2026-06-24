@@ -159,6 +159,10 @@ EOF
 fi
 
 # ---------------------------------------------------------------------------
+step "Backup directory"
+install -d -m 0755 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" /opt/maelstrom/backups
+
+# ---------------------------------------------------------------------------
 step "Secrets directory + master key"
 install -d -m 0700 -o root -g root "${SECRETS_DIR}"
 MASTER_KEY="${SECRETS_DIR}/master.key"
