@@ -15,6 +15,7 @@ import {
 } from "@/lib/backtests";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EquityChart } from "@/components/backtests/equity-chart";
+import { OptimizeDialog } from "@/components/backtests/optimize-dialog";
 import { cn } from "@/lib/utils";
 
 function Metric({
@@ -99,6 +100,7 @@ export default function BacktestPage({ params }: { params: Promise<{ id: string 
             {new Date(run.range_end).toLocaleDateString()} · capital ${run.initial_capital}
           </p>
         </div>
+        {run.status === "done" && <OptimizeDialog runId={run.id} strategyId={run.strategy_id} />}
       </header>
 
       {run.status === "failed" && (

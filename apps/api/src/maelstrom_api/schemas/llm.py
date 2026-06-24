@@ -38,6 +38,24 @@ class StrategyGenResponse(BaseModel):
     duration_ms: int
 
 
+class StrategyOptimizeRequest(BaseModel):
+    backtest_run_id: uuid.UUID
+    provider: str = Field(default="anthropic")
+    model: str | None = None
+
+
+class StrategyOptimizeResponse(BaseModel):
+    rationale: str
+    code: str
+    provider: str
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    cached_tokens: int
+    cost_usd: float
+    duration_ms: int
+
+
 class LLMCallOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

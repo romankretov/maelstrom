@@ -11,14 +11,16 @@ from maelstrom_api import audit, crypto
 from maelstrom_api.auth import current_active_user
 from maelstrom_api.db import get_session
 from maelstrom_api.llm import get_router
-from maelstrom_api.llm.prompts import STRATEGY_GEN_SYSTEM
-from maelstrom_api.models import LLMCall, LLMProvider, User
+from maelstrom_api.llm.prompts import STRATEGY_GEN_SYSTEM, STRATEGY_OPTIMIZE_SYSTEM
+from maelstrom_api.models import BacktestRun, LLMCall, LLMProvider, StrategyVersion, User
 from maelstrom_api.schemas.llm import (
     LLMCallOut,
     LLMProviderOut,
     LLMProviderUpsert,
     StrategyGenRequest,
     StrategyGenResponse,
+    StrategyOptimizeRequest,
+    StrategyOptimizeResponse,
 )
 
 router = APIRouter(
@@ -133,6 +135,90 @@ async def generate_strategy(
 
     code = _unfence(result.text)
     return StrategyGenResponse(
+        code=code,
+        provider=result.provider,
+        model=result.model,
+        prompt_tokens=result.prompt_tokens,
+        completion_tokens=result.completion_tokens,
+        cached_tokens=result.cached_tokens,
+        cost_usd=result.cost_usd,
+        duration_ms=result.duration_ms,
+    )
+
+
+# ----------------------------------------------------------------- optimize
+
+
+_SECTION_SPLIT = re.compile(r"^\s*===\s*CODE\s*===\s*$", re.MULTILINE)
+
+
+def _split_rationale_code(raw: str) -> tuple[str, str]:
+    parts = _SECTION_SPLIT.split(raw, maxsplit=1)
+    if len(parts) != 2:
+        return "", _unfence(raw)
+    rationale = parts[0].replace("RATIONALE:", "", 1).strip()
+    return rationale, _unfence(parts[1])
+
+
+@router.post("/strategies/optimize", response_model=StrategyOptimizeResponse)
+async def optimize_strategy(
+    body: StrategyOptimizeRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> StrategyOptimizeResponse:
+    run = await session.get(BacktestRun, body.backtest_run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "backtest run not found")
+    version = await session.get(StrategyVersion, run.strategy_version_id)
+    if version is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "strategy version not found")
+    metrics = run.metrics or {}
+
+    user_message = (
+        f"## Current strategy code (v{version.version})\n"
+        f"```python\n{version.code}\n```\n\n"
+        "## Backtest metrics\n"
+        f"- source: {run.source}\n"
+        f"- symbols: {', '.join(run.symbols)}\n"
+        f"- timeframe: {run.timeframe}\n"
+        f"- range: {run.range_start.isoformat()} → {run.range_end.isoformat()}\n"
+        f"- initial_capital: {run.initial_capital}\n"
+        f"- total_return: {metrics.get('total_return')}\n"
+        f"- sharpe: {metrics.get('sharpe')}\n"
+        f"- sortino: {metrics.get('sortino')}\n"
+        f"- max_drawdown: {metrics.get('max_drawdown')}\n"
+        f"- calmar: {metrics.get('calmar')}\n"
+        f"- win_rate: {metrics.get('win_rate')}\n"
+        f"- trade_count: {metrics.get('trade_count')}\n"
+        f"- profit_factor: {metrics.get('profit_factor')}\n"
+        f"- final_equity: {metrics.get('final_equity')}\n\n"
+        "Propose one focused improvement and output the revised code "
+        "as specified."
+    )
+    rtr = get_router()
+    try:
+        result = await rtr.complete(
+            session,
+            provider=body.provider,
+            purpose="strategy_optimize",
+            system=STRATEGY_OPTIMIZE_SYSTEM,
+            user_message=user_message,
+            user_id=user.id,
+            model=body.model,
+            max_tokens=4096,
+            temperature=0.4,
+        )
+    except RuntimeError as e:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"LLM call failed: {e}. Configure the provider key in Settings.",
+        ) from e
+    except Exception as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"LLM error: {e!s}"[:400]) from e
+
+    rationale, code = _split_rationale_code(result.text)
+    return StrategyOptimizeResponse(
+        rationale=rationale or "(model did not emit a rationale section)",
         code=code,
         provider=result.provider,
         model=result.model,

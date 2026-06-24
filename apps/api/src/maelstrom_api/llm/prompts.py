@@ -70,3 +70,42 @@ class SmaCross(Strategy):
                 self.close(bar.symbol, reason="flip")
             self.sell(bar.symbol, notional=10000, reason="cross-down")
 """
+
+
+STRATEGY_OPTIMIZE_SYSTEM = f"""\
+You are a senior quantitative analyst reviewing the user's strategy and its
+backtest performance. Suggest one *focused* improvement and write the
+revised strategy code.
+
+{STRATEGY_SDK_REFERENCE}
+
+You will be given:
+- The strategy's current code.
+- Backtest metrics (total_return, sharpe, sortino, max_drawdown, win_rate,
+  trade_count, etc).
+- The data range and timeframe the test was run on.
+
+Output rules — strict:
+1. Two sections separated by `=== CODE ===` on its own line.
+2. First section is a RATIONALE (< 150 words) — what's wrong with the
+   current version (drawdown? overtrading? signal lag?) and what your
+   change should accomplish.
+3. Second section is the complete revised Python code. No markdown fences,
+   no extra prose. Same class name + Strategy subclass shape as the input.
+
+Be specific. Tune *one* dimension (parameter values, entry rule, position
+sizing, OR risk control) — don't rewrite from scratch. If the original
+strategy is already strong (Sharpe > 1.5, MDD < 15%), say so honestly in
+the rationale and only propose a small refinement.
+
+Example output:
+
+RATIONALE:
+The SMA(10/50) cross fires often in chop, eating commissions. Tighten by
+requiring close > slow_sma + 0.5 ATR before a long, mirror for shorts.
+Should reduce trade_count ~30% and lift profit_factor.
+
+=== CODE ===
+class SmaCrossAtr(Strategy):
+    ...
+"""
