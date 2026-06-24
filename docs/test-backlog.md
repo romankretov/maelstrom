@@ -96,6 +96,10 @@ Things to verify before relying on them. Tick as you go.
 - [ ] **Backup `/etc/maelstrom/master.key`.** If you lose it, every encrypted exchange key in
       `accounts.api_key_enc` becomes irrecoverable. `base64 < /etc/maelstrom/master.key` →
       paste into 1Password or wherever.
+- [ ] **After every deploy, smoke-test the master key path.** A fresh symptom we hit: secret
+      mounted but unreadable by the non-root container user manifested only on the first
+      encryption attempt. Always confirm with:
+      `docker compose exec api cat /run/secrets/master_key | wc -c`  → should print `32`.
 - [ ] Kill switch script (`infra/scripts/kill-switch.sh`) stops workers cleanly. Try it once on the
       VPS so you've used it before the day you need to.
 - [ ] Outage drill: stop postgres for 30s, then start it. API + worker should reconnect cleanly,
