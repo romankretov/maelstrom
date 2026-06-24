@@ -16,6 +16,7 @@ from .routes import (
     health,
     live_strategies,
     markets,
+    signals,
     strategies,
     ws_markets,
 )
@@ -73,5 +74,6 @@ def create_app() -> FastAPI:
     app.include_router(accounts.router)
     app.include_router(live_strategies.router)
     app.include_router(ai.router)
+    app.include_router(signals.router)
     app.include_router(ws_markets.router)
     return app

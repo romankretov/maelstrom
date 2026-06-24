@@ -54,6 +54,36 @@ Things to verify before relying on them. Tick as you go.
       `pending_start` via `LiveManager._resume_orphans()`.
 - [ ] Restart preserves paper positions (they live in Postgres, but verify after a deploy).
 
+## Phase 5.3 — opportunity scanner (untested)
+
+- [ ] Migration `0007_signals` runs cleanly.
+- [ ] Worker logs show `scanner.persisted count=N` (or `scanner.skipped reason=...`) at
+      :03 and :33 past every hour after the next deploy.
+- [ ] `/signals` page populates with cards after the first run (~30 min wait).
+- [ ] Each card shows: symbol, direction pill, rationale, score bar, confidence %, horizon.
+- [ ] `/ai/calls` shows rows with purpose=`scan_opportunities` and a sensible cost (typically
+      $0.01–0.05 per call on Sonnet).
+- [ ] Manually trigger a scan instead of waiting:
+      ```
+      docker compose exec -T worker python - <<PY
+      import asyncio
+      from arq import create_pool
+      from arq.connections import RedisSettings
+      import os
+
+      async def go():
+          pool = await create_pool(RedisSettings.from_dsn(os.environ['REDIS_URL']))
+          await pool.enqueue_job('scan_opportunities')
+          print('enqueued')
+          await pool.close()
+
+      asyncio.run(go())
+      PY
+      ```
+- [ ] If the model returns malformed JSON, `scanner.parse_failed` logs the preview and the
+      task completes with zero signals (not a crash).
+- [ ] Signals expire after 6 hours (`expires_at` column populated, list endpoint filters them).
+
 ## Phase 5.2 — strategy optimizer (untested)
 
 - [ ] **Optimize with AI** button on `/backtests/[id]` (only visible when status=done).

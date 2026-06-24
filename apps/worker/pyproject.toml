@@ -16,6 +16,8 @@ dependencies = [
     "ccxt>=4.4",
     "python-dateutil>=2.9",
     "orjson>=3.10",
+    "anthropic>=0.42",
+    "openai>=1.59",
 ]
 
 [project.optional-dependencies]

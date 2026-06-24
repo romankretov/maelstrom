@@ -10,6 +10,7 @@ from .market import (
     Timeframe,
     Trade,
 )
+from .signal import Signal
 from .strategy import (
     BacktestEquity,
     BacktestRun,
@@ -54,6 +55,7 @@ __all__ = [
     "OrderStatus",
     "Position",
     "Role",
+    "Signal",
     "Source",
     "Strategy",
     "StrategyVersion",
