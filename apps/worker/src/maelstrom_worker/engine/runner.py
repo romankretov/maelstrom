@@ -241,6 +241,88 @@ _LOAD_BARS_SQL = text(
 )
 
 
+# Approximate bar duration in seconds — used to estimate coverage.
+_TF_SECONDS: dict[str, int] = {
+    "1m": 60,
+    "5m": 300,
+    "15m": 900,
+    "1h": 3600,
+    "4h": 14400,
+    "1d": 86400,
+}
+
+
+async def _ensure_bars(
+    session: AsyncSession,
+    source: str,
+    symbol: str,
+    timeframe: str,
+    since: datetime,
+    until: datetime,
+    coverage_threshold: float = 0.95,
+) -> int:
+    """Backfill OHLCV for (source, symbol, timeframe) in [since, until] if
+    the DB is missing bars. Returns the number of new bars inserted.
+
+    Idempotent — relies on the upsert SQL's ON CONFLICT. Skipped if the
+    DB already has >= `coverage_threshold` of the expected bar count.
+    """
+    row = (
+        await session.execute(
+            text(
+                "SELECT COUNT(*) FROM ohlcv "
+                " WHERE source = :s AND symbol = :sym AND timeframe = :tf "
+                "   AND ts >= :since AND ts <= :until",
+            ),
+            {"s": source, "sym": symbol, "tf": timeframe, "since": since, "until": until},
+        )
+    ).first()
+    current = int((row or [0])[0])
+
+    tf_sec = _TF_SECONDS.get(timeframe, 60)
+    expected = max(int((until - since).total_seconds() / tf_sec), 1)
+    if current >= int(expected * coverage_threshold):
+        log.info(
+            "backtest.bars.ok",
+            source=source,
+            symbol=symbol,
+            timeframe=timeframe,
+            current=current,
+            expected=expected,
+        )
+        return 0
+
+    log.info(
+        "backtest.auto_backfill.start",
+        source=source,
+        symbol=symbol,
+        timeframe=timeframe,
+        current=current,
+        expected=expected,
+        since=since.isoformat(),
+        until=until.isoformat(),
+    )
+    # Lazy import to keep this module fast-loading.
+    from maelstrom_worker.connectors import get_source
+    from maelstrom_worker.tasks import _upsert_bars
+
+    src = get_source(source)
+    try:
+        new_bars = await src.fetch_ohlcv(symbol, timeframe, since, until)
+    finally:
+        await src.close()
+    inserted = 0
+    if new_bars:
+        inserted = await _upsert_bars(session, new_bars)
+    log.info(
+        "backtest.auto_backfill.done",
+        source=source,
+        symbol=symbol,
+        inserted=inserted,
+    )
+    return inserted
+
+
 async def _load_bars(
     session: AsyncSession,
     source: str,
@@ -320,12 +402,27 @@ async def run_backtest_run(session: AsyncSession, run_id: str) -> dict[str, Any]
     )
     await session.commit()
 
+    # Make sure we have bars for the requested range; fetch any missing
+    # chunks from the exchange before iterating. ON CONFLICT in the upsert
+    # de-duplicates whatever was already cached.
+    for sym in symbols:
+        try:
+            await _ensure_bars(session, source, sym, timeframe, since, until)
+        except Exception as e:
+            log.warning(
+                "backtest.auto_backfill_failed",
+                run_id=run_id,
+                symbol=sym,
+                error=str(e),
+            )
+
     bars = await _load_bars(session, source, list(symbols), timeframe, since, until)
     if not bars:
         await session.execute(
             text(
                 "UPDATE backtest_runs "
-                "   SET status='failed', error='no bars in range — backfill first', "
+                "   SET status='failed', "
+                "       error='no bars in range — exchange returned empty and DB has none', "
                 "       completed_at=now() "
                 " WHERE id=:id",
             ),
