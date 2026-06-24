@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CodeEditor } from "@/components/code-editor";
+import { AiGenerateDialog } from "@/components/strategies/ai-generate-dialog";
 import { BacktestForm } from "@/components/strategies/backtest-form";
 import { BacktestList } from "@/components/strategies/backtest-list";
 import { LiveList } from "@/components/strategies/live-list";
@@ -110,8 +111,14 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
 
       <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm">Code</CardTitle>
+            <AiGenerateDialog
+              onCode={(c) => {
+                setCode(c);
+                setDirty(true);
+              }}
+            />
           </CardHeader>
           <CardContent className="space-y-3">
             <CodeEditor

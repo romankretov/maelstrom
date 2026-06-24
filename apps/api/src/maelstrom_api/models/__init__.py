@@ -1,4 +1,5 @@
 from .audit import AuditLog
+from .llm import LLMCall, LLMProvider
 from .market import (
     OHLCV,
     AssetKind,
@@ -45,6 +46,8 @@ __all__ = [
     "BacktestTrade",
     "Fill",
     "Instrument",
+    "LLMCall",
+    "LLMProvider",
     "LiveStatus",
     "LiveStrategy",
     "Order",

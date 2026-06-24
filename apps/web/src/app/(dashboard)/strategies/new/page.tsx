@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CodeEditor } from "@/components/code-editor";
+import { AiGenerateDialog } from "@/components/strategies/ai-generate-dialog";
 
 export default function NewStrategy() {
   const router = useRouter();
@@ -66,7 +67,10 @@ export default function NewStrategy() {
             />
           </div>
           <div className="space-y-2">
-            <Label>Code</Label>
+            <div className="flex items-center justify-between">
+              <Label>Code</Label>
+              <AiGenerateDialog onCode={setCode} />
+            </div>
             <CodeEditor value={code} onChange={setCode} height={420} />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
