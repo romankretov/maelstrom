@@ -63,8 +63,14 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    # Mount the master key world-readable INSIDE the container — the host
+    # file stays root-only 0400. Required because api/worker run as a
+    # non-root user (Dockerfile creates `app`) and the default secret
+    # permissions (0400 root:root) would block them.
     secrets:
-      - master_key
+      - source: master_key
+        target: master_key
+        mode: 0444
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "5" }
@@ -81,7 +87,9 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     secrets:
-      - master_key
+      - source: master_key
+        target: master_key
+        mode: 0444
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "5" }
