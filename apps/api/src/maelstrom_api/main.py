@@ -17,6 +17,7 @@ from .routes import (
     live_strategies,
     markets,
     notifications,
+    research,
     signals,
     strategies,
     ws_markets,
@@ -77,5 +78,6 @@ def create_app() -> FastAPI:
     app.include_router(ai.router)
     app.include_router(signals.router)
     app.include_router(notifications.router)
+    app.include_router(research.router)
     app.include_router(ws_markets.router)
     return app

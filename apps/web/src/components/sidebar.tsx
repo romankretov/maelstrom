@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  FlaskConical,
   LayoutDashboard,
   LineChart,
   MessageSquareText,
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
 const ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/markets", label: "Markets", icon: LineChart },
+  { href: "/research", label: "Research", icon: FlaskConical },
   { href: "/strategies", label: "Strategies", icon: Activity },
   { href: "/portfolio", label: "Portfolio", icon: Wallet },
   { href: "/signals", label: "Signals", icon: Signal },

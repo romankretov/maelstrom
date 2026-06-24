@@ -2,6 +2,31 @@
 
 Things to verify before relying on them. Tick as you go.
 
+## Research workbench (untested)
+
+- [ ] Sidebar shows **Research** between Markets and Strategies. Clicking lands on `/research`.
+- [ ] Picking a symbol from the left list populates the stats card: last price, 1h/24h/7d/30d
+      % change (colored red/green), 24h high/low/volume, realized vol 24h + 7d (annualized).
+- [ ] Timeframe pills on the stats card switch the underlying bar series. `1d` should show many
+      fewer bars than `1h`.
+- [ ] If the symbol has no bars stored, stats card shows the "no bars stored" message — kick a
+      backtest and verify auto-backfill populates them.
+- [ ] Correlation card: type 3+ symbols, hit Add for each, **Compute**. Matrix renders with a
+      red/green heatmap and self-correlation on the diagonal == 1.00.
+- [ ] Hover a cell — tooltip shows `samples: N` (overlapping return count).
+- [ ] BTC vs ETH on 1h/30d should be > 0.5 (high). Adding stablecoin-stablecoin pair should
+      give ~0 / NaN if variance is zero.
+- [ ] Removing a chip from the symbol pill row and recomputing produces a smaller matrix.
+
+## Backtest auto-backfill (untested)
+
+- [ ] Pick a symbol with very few stored bars. Kick a backtest covering a longer range.
+      Worker log shows `_ensure_bars` fetching from the connector before bars load.
+- [ ] If the source has the data, the backtest completes successfully without needing to
+      manually backfill from the Markets page.
+- [ ] If the source returns nothing (e.g. delisted instrument), backtest still errors gracefully
+      with the existing "no bars" message — not a connector traceback.
+
 ## Phase 3.2 — risk engine + kill switch (untested)
 
 - [ ] Migration `0005_risk` runs cleanly on the existing DB. Verify with:
