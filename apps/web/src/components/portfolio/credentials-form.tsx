@@ -84,6 +84,27 @@ export function CredentialsCard({ accountId }: { accountId: string }) {
         </div>
         <div className="flex gap-2">
           {data?.has_credentials && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                try {
+                  await api(`/accounts/${accountId}/sync-balance`, { method: "POST" });
+                  await mutate(`/accounts/${accountId}/portfolio`);
+                  await mutate("/accounts");
+                } catch (e) {
+                  alert(
+                    e instanceof Error
+                      ? e.message
+                      : String((e as { message?: string }).message ?? "Failed"),
+                  );
+                }
+              }}
+            >
+              Sync balance
+            </Button>
+          )}
+          {data?.has_credentials && (
             <Button variant="ghost" size="sm" onClick={clear}>
               Clear
             </Button>

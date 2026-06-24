@@ -25,7 +25,9 @@ class AccountOut(BaseModel):
 class AccountCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     kind: str = Field(default="paper")
-    starting_capital: Decimal = Field(default=Decimal("10000"))
+    # For paper: virtual cash. For live: omit — server will fetch the
+    # exchange-side equity as the baseline when credentials are added.
+    starting_capital: Decimal | None = None
     daily_loss_limit_pct: Decimal | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
 

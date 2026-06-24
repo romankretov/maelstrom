@@ -4,6 +4,7 @@ import uuid
 from decimal import Decimal
 from typing import Annotated
 
+import structlog
 from arq import ArqRedis
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import desc, func, select, text
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from maelstrom_api import audit, crypto
 from maelstrom_api.auth import current_active_user
 from maelstrom_api.db import get_session
+from maelstrom_api.hyperliquid_info import fetch_account_equity
 from maelstrom_api.models import (
     Account,
     AccountEquity,
@@ -33,6 +35,8 @@ from maelstrom_api.schemas.trading import (
     PortfolioSummary,
     PositionOut,
 )
+
+log = structlog.get_logger()
 
 router = APIRouter(
     prefix="/accounts",
@@ -93,11 +97,18 @@ async def create_account(
     if existing is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, f"account '{body.name}' already exists")
 
+    # For paper accounts, default starting_capital to 10k if not given.
+    # For live accounts, leave at 0 — set_credentials will fetch the
+    # exchange-side equity baseline once the wallet is wired up.
+    if body.starting_capital is None:
+        starting_capital = Decimal("10000") if body.kind == "paper" else Decimal("0")
+    else:
+        starting_capital = body.starting_capital
     acc = Account(
         name=body.name,
         kind=body.kind,
         owner_id=user.id,
-        starting_capital=body.starting_capital,
+        starting_capital=starting_capital,
         meta=body.meta,
     )
     session.add(acc)
@@ -198,16 +209,76 @@ async def set_credentials(
     new_meta = dict(acc.meta or {})
     new_meta["wallet_address"] = body.wallet_address
     acc.meta = new_meta
+
+    # First time we see credentials for this account: fetch equity from the
+    # exchange and use it as the baseline. Subsequent re-saves don't reset
+    # the baseline (so return-% math is stable). The user can manually
+    # PATCH starting_capital if they want to recalibrate.
+    if acc.starting_capital == 0:
+        equity = await fetch_account_equity(
+            body.wallet_address,
+            testnet=(acc.kind == "live_hl_testnet"),
+        )
+        if equity is not None and equity > 0:
+            acc.starting_capital = Decimal(str(equity))
+            log.info(
+                "account.starting_capital.set_from_hl",
+                account_id=str(account_id),
+                equity=equity,
+            )
+
     await audit.record(
         session,
         action="account.credentials.set",
         actor_id=user.id,
         target_kind="account",
         target_id=str(account_id),
-        payload={"wallet_address": body.wallet_address},  # plaintext key never logged
+        # plaintext key never logged
+        payload={
+            "wallet_address": body.wallet_address,
+            "starting_capital_set": float(acc.starting_capital),
+        },
     )
     await session.commit()
     return CredentialState(has_credentials=True, wallet_address=body.wallet_address)
+
+
+@router.post("/{account_id}/sync-balance", response_model=AccountOut)
+async def sync_balance(
+    account_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> Account:
+    """Re-fetch HL equity and overwrite starting_capital. Use this to
+    recalibrate the return-% baseline after a deposit / withdrawal."""
+    acc = await session.get(Account, account_id)
+    if acc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+    if not _can_access(acc, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not your account")
+    if not acc.kind.startswith("live_hl_"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "only Hyperliquid accounts")
+    wallet = (acc.meta or {}).get("wallet_address")
+    if not wallet:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "no wallet_address on account — add credentials first",
+        )
+    equity = await fetch_account_equity(wallet, testnet=(acc.kind == "live_hl_testnet"))
+    if equity is None:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Hyperliquid info API unreachable")
+    acc.starting_capital = Decimal(str(equity))
+    await audit.record(
+        session,
+        action="account.sync_balance",
+        actor_id=user.id,
+        target_kind="account",
+        target_id=str(account_id),
+        payload={"equity": equity},
+    )
+    await session.commit()
+    await session.refresh(acc)
+    return acc
 
 
 @router.delete("/{account_id}/credentials", status_code=status.HTTP_204_NO_CONTENT)
