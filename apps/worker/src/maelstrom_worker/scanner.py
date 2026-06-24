@@ -48,58 +48,84 @@ If nothing in the snapshot is compelling, output `[]`. Don't fabricate.
 """
 
 
-_TOP_MOVERS_SQL = text(
-    """
-    WITH latest AS (
-        SELECT source, symbol, ts, close, volume,
-               ROW_NUMBER() OVER (PARTITION BY source, symbol ORDER BY ts DESC) AS rn
-          FROM ohlcv
-         WHERE timeframe = '1h'
-           AND ts >= now() - INTERVAL '25 hours'
-    ),
-    pivot AS (
-        SELECT
-            source, symbol,
-            MAX(close)  FILTER (WHERE rn = 1)  AS close_now,
-            MAX(close)  FILTER (WHERE rn = 24) AS close_24h,
-            SUM(volume) FILTER (WHERE rn <= 24) AS vol_24h
-          FROM latest
-         WHERE rn <= 24
-         GROUP BY source, symbol
-    )
-    SELECT source, symbol, close_now, close_24h,
-           (close_now - close_24h) / close_24h AS pct_change,
-           vol_24h
-      FROM pivot
-     WHERE close_24h > 0 AND close_now IS NOT NULL
-     ORDER BY abs((close_now - close_24h) / close_24h) DESC
+_TOP_MOVERS_SQL_TEMPLATE = """
+    SELECT
+        source, symbol,
+        (array_agg(close ORDER BY ts DESC))[1]  AS close_now,
+        (array_agg(close ORDER BY ts ASC))[1]   AS close_old,
+        MIN(ts)                                  AS ts_old,
+        MAX(ts)                                  AS ts_new,
+        SUM(volume)                              AS vol_total,
+        COUNT(*)                                 AS bars
+      FROM ohlcv
+     WHERE timeframe = :tf
+       AND ts >= now() - INTERVAL :interval
+     GROUP BY source, symbol
+    HAVING COUNT(*) >= :min_bars
+       AND (array_agg(close ORDER BY ts ASC))[1] > 0
+     ORDER BY abs(
+        ((array_agg(close ORDER BY ts DESC))[1] -
+         (array_agg(close ORDER BY ts ASC))[1])
+        / (array_agg(close ORDER BY ts ASC))[1]
+     ) DESC
      LIMIT 20
-    """,
-)
+"""
 
 
 async def _build_snapshot(sm: async_sessionmaker) -> tuple[list[dict[str, Any]], str]:
-    """Return (rows, formatted_markdown_table)."""
+    """Return (rows, formatted_markdown_table).
+
+    Tries 1h bars over 25h first; falls back to 1m over 90m if 1h is sparse
+    (e.g. fresh deploy with only live streams + no backfill).
+    """
+    queries = [
+        ("1h", "25 hours", 3),
+        ("1m", "90 minutes", 30),
+    ]
+    rows: list[Any] = []
+    chosen: tuple[str, str, int] | None = None
     async with sm() as session:
-        rows = (await session.execute(_TOP_MOVERS_SQL)).all()
+        for tf, interval, min_bars in queries:
+            r = (
+                await session.execute(
+                    text(_TOP_MOVERS_SQL_TEMPLATE),
+                    {"tf": tf, "interval": interval, "min_bars": min_bars},
+                )
+            ).all()
+            if r:
+                rows = r
+                chosen = (tf, interval, min_bars)
+                break
     if not rows:
         return [], ""
 
     out_rows: list[dict[str, Any]] = []
-    lines = ["| source | symbol | last | 24h % | 24h vol |", "|---|---|---|---|---|"]
-    for source, symbol, close_now, close_24h, pct, vol in rows:
+    tf_label = chosen[0] if chosen else "?"
+    interval_label = chosen[1] if chosen else "?"
+    lines = [
+        f"Snapshot window: timeframe={tf_label}, lookback={interval_label}",
+        "",
+        "| source | symbol | last | % change | volume | bars |",
+        "|---|---|---|---|---|---|",
+    ]
+    for source, symbol, close_now, close_old, _ts_old, _ts_new, vol, bars in rows:
+        close_now_f = float(close_now)
+        close_old_f = float(close_old)
+        pct = (close_now_f - close_old_f) / close_old_f if close_old_f else 0.0
         d = {
             "source": source,
             "symbol": symbol,
-            "close": float(close_now),
-            "pct_24h": float(pct),
-            "vol_24h": float(vol or 0),
-            "close_24h_ago": float(close_24h),
+            "close": close_now_f,
+            "pct_change": pct,
+            "vol_total": float(vol or 0),
+            "close_start": close_old_f,
+            "bars": int(bars),
+            "timeframe": tf_label,
         }
         out_rows.append(d)
         lines.append(
             f"| {source} | {symbol} | {d['close']:.4g} | "
-            f"{d['pct_24h'] * 100:+.2f}% | {d['vol_24h']:,.0f} |",
+            f"{d['pct_change'] * 100:+.2f}% | {d['vol_total']:,.0f} | {d['bars']} |",
         )
     return out_rows, "\n".join(lines)
 
