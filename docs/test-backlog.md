@@ -54,6 +54,18 @@ Things to verify before relying on them. Tick as you go.
       `pending_start` via `LiveManager._resume_orphans()`.
 - [ ] Restart preserves paper positions (they live in Postgres, but verify after a deploy).
 
+## Phase 5.4 — trade journal assistant (untested)
+
+- [ ] **Sidebar has "Journal"** link between Signals and Settings.
+- [ ] `/journal` page: scope dropdowns (account, strategy), lookback days input,
+      preset prompt chips, big Ask button.
+- [ ] Empty scope → Ask refuses with a clear error.
+- [ ] Asking "summarise my last week of trading" with an account scoped returns a useful
+      markdown answer in &lt;15s.
+- [ ] `/ai/calls` shows a row with `purpose=journal_ask` and sensible cost (~$0.01-0.05).
+- [ ] Scope leakage check: as a non-admin, querying with another user's account_id returns 403,
+      not data.
+
 ## Phase 5.3 — opportunity scanner (untested)
 
 - [ ] Migration `0007_signals` runs cleanly.
