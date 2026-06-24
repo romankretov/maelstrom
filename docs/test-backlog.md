@@ -54,6 +54,25 @@ Things to verify before relying on them. Tick as you go.
       `pending_start` via `LiveManager._resume_orphans()`.
 - [ ] Restart preserves paper positions (they live in Postgres, but verify after a deploy).
 
+## Phase 5.0+5.1 — LLM router + strategy co-pilot (untested)
+
+- [ ] Migration `0006_llm` runs cleanly. Tables `llm_providers` and `llm_calls` exist.
+- [ ] Anthropic + OpenAI Python SDKs installed in the api image
+      (`pip list | grep -E 'anthropic|openai'`).
+- [ ] **Settings page** (`/settings`): each provider card shows "no key" pill initially. Paste
+      your Anthropic key → save → pill flips to "key set". Same for OpenAI.
+- [ ] Default model auto-fills from `MODEL_OPTIONS` or you can type a custom one.
+- [ ] **AI Generate dialog** on `/strategies/new` and `/strategies/[id]`: prompt like
+      "momentum strategy on ETH-PERP, breakout above 30-bar high, exit on 10-bar low, $5k notional"
+      should return runnable code that backtests without `EngineError`.
+- [ ] `/ai/calls` returns the audit row(s): tokens, cost, duration, purpose=strategy_gen.
+- [ ] Prompt caching works for Anthropic — on the second generation in the same hour, you should
+      see `cached_tokens > 0` and a lower `cost_usd` than the first call.
+- [ ] **OpenAI key is encrypted at rest.** Verify via psql:
+      `SELECT name, length(api_key_enc) FROM llm_providers;` — non-null length, but the key shouldn't
+      be visible in plaintext anywhere in `audit_log` either.
+- [ ] Disabling a provider (toggle) blocks further calls with a clean 400.
+
 ## Phase 1–2 — re-verifications worth doing once
 
 - [ ] CCXT instrument sync still produces ~200 Binance + ~150 Hyperliquid perps after deploys.
