@@ -54,6 +54,16 @@ Things to verify before relying on them. Tick as you go.
       `pending_start` via `LiveManager._resume_orphans()`.
 - [ ] Restart preserves paper positions (they live in Postgres, but verify after a deploy).
 
+## Phase 5.2 — strategy optimizer (untested)
+
+- [ ] **Optimize with AI** button on `/backtests/[id]` (only visible when status=done).
+- [ ] Dialog shows the rationale + proposed code from the model in clearly separated panes.
+- [ ] **Apply as new version** creates a new `strategy_versions` row with message
+      `"AI optimize (<provider> <model>)"` and navigates back to the editor.
+- [ ] `/ai/calls` row appears with purpose=`strategy_optimize`.
+- [ ] If the model omits the `=== CODE ===` separator, the rationale is empty and the entire
+      response lands in the code pane (degraded but still usable).
+
 ## Phase 5.0+5.1 — LLM router + strategy co-pilot (untested)
 
 - [ ] Migration `0006_llm` runs cleanly. Tables `llm_providers` and `llm_calls` exist.
