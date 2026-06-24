@@ -165,8 +165,14 @@ MASTER_KEY="${SECRETS_DIR}/master.key"
 if [[ ! -f "${MASTER_KEY}" ]]; then
     head -c 32 /dev/urandom > "${MASTER_KEY}"
     chown root:root "${MASTER_KEY}"
-    chmod 0400 "${MASTER_KEY}"
+    # 0444 (not 0400) — docker-compose secrets are bind-mounts that
+    # inherit the host file's mode. The non-root `app` user inside the
+    # api/worker containers must be able to read it.
+    chmod 0444 "${MASTER_KEY}"
     echo "Generated ${MASTER_KEY}. BACK THIS UP somewhere safe — losing it loses all encrypted API keys."
+else
+    # Existing key: make sure perms are still 0444 (this script is idempotent).
+    chmod 0444 "${MASTER_KEY}"
 fi
 
 # ---------------------------------------------------------------------------

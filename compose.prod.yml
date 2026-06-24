@@ -63,10 +63,12 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
-    # Mount the master key world-readable INSIDE the container — the host
-    # file stays root-only 0400. Required because api/worker run as a
-    # non-root user (Dockerfile creates `app`) and the default secret
-    # permissions (0400 root:root) would block them.
+    # Master key permission: in plain docker-compose (non-swarm) the
+    # `secrets:` mount is a host-file bind-mount that inherits the host
+    # file's mode. The bootstrap script chmod's the file 0444 so the
+    # non-root `app` user inside the container can read it.
+    # (The mode: field below is silently ignored outside swarm, but kept
+    # as documentation — swarm deploys would honor it.)
     secrets:
       - source: master_key
         target: master_key
