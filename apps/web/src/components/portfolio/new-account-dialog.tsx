@@ -64,9 +64,13 @@ export function NewAccountDialog({ onCreated }: { onCreated?: (a: Account) => vo
     setBusy(true);
     setError(null);
     try {
+      // For live accounts we omit starting_capital — the server fetches it
+      // from the exchange when credentials are added (see set_credentials).
+      const body: Record<string, unknown> = { name, kind };
+      if (kind === "paper") body.starting_capital = capital;
       const a = await api<Account>("/accounts", {
         method: "POST",
-        body: JSON.stringify({ name, kind, starting_capital: capital }),
+        body: JSON.stringify(body),
       });
       await mutate("/accounts");
       setOpen(false);
@@ -143,24 +147,24 @@ export function NewAccountDialog({ onCreated }: { onCreated?: (a: Account) => vo
               />
             </div>
 
-            <div className="space-y-1">
-              <Label htmlFor="capital">
-                {isLive ? "Starting capital reference (USDT)" : "Starting capital (USDT)"}
-              </Label>
-              <Input
-                id="capital"
-                inputMode="decimal"
-                value={capital}
-                onChange={(e) => setCapital(e.target.value)}
-                required
-              />
-              {isLive && (
-                <p className="text-xs text-muted-foreground">
-                  For live accounts this is only used to compute % returns vs your starting point.
-                  Real cash balance comes from the exchange itself.
-                </p>
-              )}
-            </div>
+            {!isLive && (
+              <div className="space-y-1">
+                <Label htmlFor="capital">Starting capital (USDT)</Label>
+                <Input
+                  id="capital"
+                  inputMode="decimal"
+                  value={capital}
+                  onChange={(e) => setCapital(e.target.value)}
+                  required
+                />
+              </div>
+            )}
+            {isLive && (
+              <p className="text-xs text-muted-foreground">
+                Maelstrom will auto-fetch your Hyperliquid equity once you add credentials and use
+                that as the return-% baseline. No need to guess a number.
+              </p>
+            )}
 
             {isLive && (
               <div className="space-y-1 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3 text-xs">
