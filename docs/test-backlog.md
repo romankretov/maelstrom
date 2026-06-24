@@ -19,6 +19,22 @@ Things to verify before relying on them. Tick as you go.
       `PATCH /accounts/{id}` (curl), force a few losing trades, confirm new orders get rejected
       with `daily loss limit breached`. Limit resets at UTC midnight.
 
+## Live account onboarding UI (untested)
+
+- [ ] `/portfolio` header has a **+ New account** button in both empty and
+      populated states.
+- [ ] Dialog shows three kind cards: paper / hyperliquid testnet / hyperliquid mainnet.
+      Mainnet card shows a `real money` pill.
+- [ ] Creating a paper account works as before.
+- [ ] Creating a Hyperliquid testnet account: admin only. Non-admin gets 403
+      with a clear message. Newly created account auto-selects.
+- [ ] After creating an HL account, the Credentials card appears under the
+      account picker (because `kind !== 'paper'`).
+- [ ] Creating a mainnet account without `MAELSTROM_ALLOW_MAINNET=1` on the
+      VPS returns 403; with the flag, it succeeds for admin and rejects
+      non-admin.
+- [ ] The pre-create confirm box fires only for mainnet.
+
 ## Phase 3.3 — Hyperliquid broker + recon (untested, this push)
 
 > ⚠️ Test these on **Hyperliquid testnet first**. Mainnet is gated behind a second flag.

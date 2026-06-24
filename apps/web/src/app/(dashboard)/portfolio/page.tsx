@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CredentialsCard } from "@/components/portfolio/credentials-form";
+import { NewAccountDialog } from "@/components/portfolio/new-account-dialog";
 import { cn } from "@/lib/utils";
 
 function Metric({
@@ -122,9 +123,13 @@ export default function PortfolioPage() {
   if (!accounts || accounts.length === 0) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Portfolio</h1>
+        <header className="flex items-center justify-between gap-2">
+          <h1 className="text-2xl font-semibold">Portfolio</h1>
+          <NewAccountDialog onCreated={(a) => setSelectedId(a.id)} />
+        </header>
         <p className="text-sm text-muted-foreground">
-          You don&apos;t have any accounts yet. Create one to get started.
+          You don&apos;t have any accounts yet. Click <b>New account</b> above, or use the quick
+          paper-account form below.
         </p>
         <CreateAccountCard onCreated={() => mutate("/accounts")} />
       </div>
@@ -153,7 +158,7 @@ export default function PortfolioPage() {
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Portfolio</h1>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           {accounts.map((a) => (
             <Button
               key={a.id}
@@ -173,6 +178,7 @@ export default function PortfolioPage() {
               )}
             </Button>
           ))}
+          <NewAccountDialog onCreated={(a) => setSelectedId(a.id)} />
         </div>
       </header>
 

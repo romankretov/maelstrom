@@ -22,6 +22,54 @@ The workflow:
 4. `docker compose up -d --remove-orphans`
 5. Calls `healthcheck.sh`; on failure runs `rollback.sh`
 
+## Adding a Hyperliquid account end-to-end
+
+End goal: a strategy you wrote runs live on Hyperliquid (testnet first,
+mainnet only after you've smoke-tested).
+
+1. **Generate an agent wallet on Hyperliquid testnet.** Go to
+   https://app.hyperliquid-testnet.xyz → settings → API → "Generate an
+   agent wallet". The agent has trading rights only — it can't withdraw
+   funds. Copy its **wallet address** and **private key**.
+2. Fund the master wallet with testnet USDC from the faucet on the same
+   page. Approve the agent (one-time).
+3. **In Maelstrom UI** → `/portfolio` → **+ New account** → pick
+   **Hyperliquid testnet** → name it (e.g. `hl-testnet`), set a
+   reference starting capital (just for return-% math) → Create. The
+   new account auto-selects.
+4. The Credentials card appears below the account picker. Click **Add
+   credentials** → paste wallet address + private key → Save. The key
+   is encrypted with the VPS master key (libsodium SecretBox) before it
+   hits Postgres. It is never returned by any API and never written to
+   `audit_log` payloads.
+5. Go to `/strategies` → open a strategy → click **Run live**. Pick the
+   `hl-testnet` account. Set **Max notional per symbol** as a safety
+   belt — `100` is sensible while you're sanity-checking.
+6. The Live runs card on the strategy page shows the new row flipping
+   `pending_start → running` within ~3s. As bars arrive, any
+   `self.buy/sell` call routes through `HyperliquidBroker.submit` which
+   places a market order on testnet.
+7. Watch logs: `docker compose logs -f worker | grep -E 'hl.fill|hl.reject|reconcile'`.
+8. Cross-check on Hyperliquid testnet UI that the order + position match
+   what `/portfolio` shows.
+
+### Going to mainnet
+
+Only after you've completed steps 1–8 above on testnet.
+
+1. On the VPS, set `MAELSTROM_ALLOW_MAINNET=1` in `/opt/maelstrom/.env`
+   and restart api+worker. Without this env var, the API refuses to
+   create `live_hl_main` accounts even from admin.
+2. Repeat the agent-wallet steps on Hyperliquid mainnet
+   (https://app.hyperliquid.xyz).
+3. **+ New account** → **Hyperliquid mainnet** → the dialog warns you
+   first; confirm. Same credentials flow.
+4. **Start tiny.** Set `max_notional_per_symbol = 50` (or less). Confirm
+   one round-trip works before scaling up.
+5. Stash `/etc/maelstrom/master.key` somewhere durable (1Password).
+   Losing it means every encrypted exchange key in the DB becomes
+   unrecoverable — including the one funding your mainnet account.
+
 ## Emergency
 
 | Situation                  | Action                                                                       |
