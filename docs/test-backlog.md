@@ -54,6 +54,26 @@ Things to verify before relying on them. Tick as you go.
       `pending_start` via `LiveManager._resume_orphans()`.
 - [ ] Restart preserves paper positions (they live in Postgres, but verify after a deploy).
 
+## Phase 7 — backups (untested)
+
+- [ ] After `docker compose pull && up -d`, `docker compose ps` shows a healthy
+      `backup` container (image built locally on first up).
+- [ ] On boot, the daemon logs `[backup ...] starting; interval=86400s ...`.
+- [ ] Force a backup immediately by setting `BACKUP_INTERVAL=60` in `.env`,
+      bouncing the container, waiting a minute — a `maelstrom-<ts>.sql.gz`
+      lands in `/opt/maelstrom/backups/`.
+- [ ] Size is non-trivial (~MB for a populated DB).
+- [ ] Restore drill (do this once in a test env):
+      1. Note today's user count: `SELECT COUNT(*) FROM users;`
+      2. Add a marker row: `INSERT INTO audit_log (...) VALUES ('test-marker', ...);`
+      3. `./infra/scripts/restore.sh` against a backup taken BEFORE the marker.
+      4. Confirm the marker row is GONE — restore worked.
+- [ ] If `RCLONE_REMOTE_PATH` is configured, a copy lands at the remote.
+- [ ] Files older than `BACKUP_RETENTION_DAYS` get pruned (logs say `pruned ...`).
+- [ ] **Off-VPS copy of `/etc/maelstrom/master.key`** taken and stashed somewhere
+      durable. Lose this and no restored backup can decrypt any exchange/LLM/
+      notification key.
+
 ## Phase 6 — notifications (untested)
 
 - [ ] Migration `0008_notifications` runs cleanly.
