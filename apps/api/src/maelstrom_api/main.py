@@ -11,6 +11,7 @@ from .auth import auth_backend, fastapi_users
 from .config import get_settings
 from .routes import (
     accounts,
+    ai,
     backtests,
     health,
     live_strategies,
@@ -71,5 +72,6 @@ def create_app() -> FastAPI:
     app.include_router(backtests.router)
     app.include_router(accounts.router)
     app.include_router(live_strategies.router)
+    app.include_router(ai.router)
     app.include_router(ws_markets.router)
     return app
