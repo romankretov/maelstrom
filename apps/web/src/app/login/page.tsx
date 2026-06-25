@@ -31,8 +31,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Manual override for when the bootstrap-needed check fails (CORS, DB
+  // unreachable, etc.) — the user can still create the first admin.
+  const [manualBootstrap, setManualBootstrap] = useState(false);
 
-  const isBootstrap = status?.needs_admin === true;
+  const isBootstrap = status?.needs_admin === true || manualBootstrap;
 
   async function login(emailValue: string, passwordValue: string): Promise<void> {
     const form = new URLSearchParams({ username: emailValue, password: passwordValue });
@@ -111,6 +114,25 @@ export default function LoginPage() {
               {loading ? ctaBusy : cta}
             </Button>
           </form>
+          <div className="mt-3 text-center text-xs text-muted-foreground">
+            {isBootstrap ? (
+              <button
+                type="button"
+                onClick={() => setManualBootstrap(false)}
+                className="underline hover:text-foreground"
+              >
+                Back to sign in
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setManualBootstrap(true)}
+                className="underline hover:text-foreground"
+              >
+                First boot? Create the admin account
+              </button>
+            )}
+          </div>
         </CardContent>
       </Card>
     </main>

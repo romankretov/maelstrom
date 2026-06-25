@@ -36,6 +36,10 @@ services:
       MAELSTROM_ENV: development
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-maelstrom}:${POSTGRES_PASSWORD:-dev}@postgres:5432/${POSTGRES_DB:-maelstrom}
       REDIS_URL: redis://redis:6379/0
+      # Allow the dev web app (running on the host) to talk to the API
+      # container's exposed port without CORS blocking the bootstrap
+      # endpoint. Overrides anything in .env for local dev.
+      API_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
     ports: ["8000:8000"]
     depends_on:
       postgres: { condition: service_healthy }
