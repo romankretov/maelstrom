@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { fetcher } from "@/lib/api";
 import { type Signal, directionTone } from "@/lib/signals";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { BacktestSignalButton } from "@/components/signals/backtest-signal-button";
 import { ScannerControl } from "@/components/signals/scanner-control";
 import { cn } from "@/lib/utils";
 
@@ -103,6 +104,7 @@ export default function Signals() {
                   <span>{s.source}</span>
                   <span>{s.scanner}</span>
                 </div>
+                <BacktestSignalButton signalId={s.id} />
               </CardContent>
             </Card>
           );
