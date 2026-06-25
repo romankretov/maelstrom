@@ -31,7 +31,17 @@ function isoTodayMidnight(): string {
   return d.toISOString().slice(0, 16);
 }
 
-export function BacktestForm({ strategyId }: { strategyId: string }) {
+export function BacktestForm({
+  strategyId,
+  dirty = false,
+  onSaveFirst,
+}: {
+  strategyId: string;
+  /** True if there are unsaved code edits in the parent editor. */
+  dirty?: boolean;
+  /** Called before submit when `dirty` is true. Must save a new version. */
+  onSaveFirst?: () => Promise<void>;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [source, setSource] = useState("binance");
@@ -48,6 +58,12 @@ export function BacktestForm({ strategyId }: { strategyId: string }) {
     setBusy(true);
     setError(null);
     try {
+      // If the parent editor has unsaved changes, persist them as a new
+      // version first so the backtest runs against what's actually on
+      // screen rather than the stale latest version.
+      if (dirty && onSaveFirst) {
+        await onSaveFirst();
+      }
       const run = await api<BacktestRun>(`/backtests/strategies/${strategyId}`, {
         method: "POST",
         body: JSON.stringify({
@@ -78,13 +94,17 @@ export function BacktestForm({ strategyId }: { strategyId: string }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm">Run backtest</Button>
+        <Button size="sm">{dirty ? "Save & backtest" : "Run backtest"}</Button>
       </DialogTrigger>
       <DialogContent>
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>New backtest</DialogTitle>
-            <DialogDescription>Uses the latest version of this strategy.</DialogDescription>
+            <DialogDescription>
+              {dirty
+                ? "Your editor has unsaved changes — Run will save a new version first, then backtest against it."
+                : "Uses the latest saved version of this strategy."}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-3 py-4 sm:grid-cols-2">

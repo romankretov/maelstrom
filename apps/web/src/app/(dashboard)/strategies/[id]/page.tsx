@@ -102,7 +102,7 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
           <Button variant="ghost" size="sm" onClick={archive}>
             Archive
           </Button>
-          <BacktestForm strategyId={id} />
+          <BacktestForm strategyId={id} dirty={dirty} onSaveFirst={save} />
           <SweepForm strategyId={id} />
           <RunLiveForm strategyId={id} />
           <Button size="sm" onClick={save} disabled={busy || !dirty}>
