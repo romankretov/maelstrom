@@ -48,9 +48,12 @@ If nothing in the snapshot is compelling, output `[]`. Don't fabricate.
 """
 
 
-# `INTERVAL :literal` rejects bind params; CAST(:str AS INTERVAL) is rejected
-# by asyncpg's strict codec ('str has no attribute days'). Pass a timedelta
-# directly — asyncpg has a native interval ⇄ timedelta codec.
+# `INTERVAL :literal` rejects bind params; CAST(text AS INTERVAL) is rejected
+# by asyncpg's strict codec; passing a bare timedelta tripped asyncpg's
+# prepare step ("operator does not exist: timestamptz >= interval") because
+# PG couldn't infer the parameter type in `now() - $n`. Explicit `::interval`
+# cast on the bind tells PG the type up front; the timedelta value is then
+# shipped via asyncpg's native interval codec.
 _TOP_MOVERS_SQL_TEMPLATE = """
     SELECT
         source, symbol,
@@ -62,7 +65,7 @@ _TOP_MOVERS_SQL_TEMPLATE = """
         COUNT(*)                                 AS bars
       FROM ohlcv
      WHERE timeframe = :tf
-       AND ts >= now() - :interval
+       AND ts >= now() - CAST(:interval AS interval)
      GROUP BY source, symbol
     HAVING COUNT(*) >= :min_bars
        AND (array_agg(close ORDER BY ts ASC))[1] > 0
