@@ -13,8 +13,17 @@ help:  ## Show available targets
 	@awk 'BEGIN { FS = ":.*?## " } /^[a-zA-Z_%-]+:.*?## / { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 # ---- Dev --------------------------------------------------------------------
-.PHONY: dev dev-down logs ps
-dev:  ## Start dev stack (postgres, redis, api, worker, web) with hot reload
+.PHONY: dev dev-down dev-key logs ps
+
+dev-key:  ## Generate a 32-byte master key for local dev (idempotent)
+	@mkdir -p .maelstrom
+	@if [[ ! -f .maelstrom/master.key ]]; then \
+		head -c 32 /dev/urandom > .maelstrom/master.key && \
+		chmod 0444 .maelstrom/master.key && \
+		echo "Generated .maelstrom/master.key (dev only, gitignored)"; \
+	fi
+
+dev: dev-key  ## Start dev stack (postgres, redis, api, worker, web) with hot reload
 	@[[ -f .env ]] || cp .env.example .env
 	$(COMPOSE_DEV) up --build
 
