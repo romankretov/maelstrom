@@ -15,6 +15,7 @@ type ScannerConfig = {
   last_signal_count: number | null;
   last_reason: string | null;
   last_call_id: string | null;
+  system_prompt: string | null;
 };
 
 const INTERVAL_OPTIONS = [
@@ -60,6 +61,8 @@ export function ScannerControl() {
   });
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [promptDraft, setPromptDraft] = useState<string | null>(null);
+  const [showPrompt, setShowPrompt] = useState(false);
 
   const patch = async (body: Partial<ScannerConfig>) => {
     setBusy(true);
@@ -142,6 +145,60 @@ export function ScannerControl() {
             <pre className="mt-1 whitespace-pre-wrap break-words">{data.last_reason}</pre>
           </details>
         )}
+
+        <details
+          open={showPrompt}
+          onToggle={(e) => setShowPrompt((e.target as HTMLDetailsElement).open)}
+          className="rounded border bg-muted/30 p-2 text-xs"
+        >
+          <summary className="cursor-pointer text-muted-foreground">
+            System prompt {data.system_prompt ? "(custom)" : "(default)"}
+          </summary>
+          <div className="mt-2 space-y-2">
+            <textarea
+              value={promptDraft ?? data.system_prompt ?? ""}
+              onChange={(e) => setPromptDraft(e.target.value)}
+              placeholder="Empty = use built-in default. Paste your own to steer the scanner (e.g. 'mean-reversion only, ignore symbols with vol < 100M USDT')."
+              className="h-40 w-full rounded border bg-background p-2 font-mono text-[11px]"
+            />
+            <div className="flex gap-1">
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy || promptDraft === null}
+                onClick={async () => {
+                  await patch({ system_prompt: promptDraft ?? "" });
+                  setPromptDraft(null);
+                }}
+              >
+                {busy ? "Saving…" : "Save prompt"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={busy || (promptDraft === null && !data.system_prompt)}
+                onClick={async () => {
+                  setPromptDraft("");
+                  await patch({ system_prompt: "" });
+                  setPromptDraft(null);
+                }}
+              >
+                Reset to default
+              </Button>
+              {promptDraft !== null && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setPromptDraft(null)}
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
+          </div>
+        </details>
 
         <div className="flex flex-wrap items-center gap-2">
           <select

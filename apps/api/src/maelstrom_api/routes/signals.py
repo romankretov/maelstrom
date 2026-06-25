@@ -42,11 +42,14 @@ class ScannerConfigOut(BaseModel):
     last_signal_count: int | None
     last_reason: str | None
     last_call_id: str | None
+    system_prompt: str | None = None  # null ⇒ scanner falls back to default
 
 
 class ScannerConfigPatch(BaseModel):
     interval_minutes: int | None = Field(default=None, ge=5, le=1440)
     enabled: bool | None = None
+    # Use an empty string to reset to default (will be stored as NULL).
+    system_prompt: str | None = Field(default=None, max_length=20_000)
 
 
 async def _read_scanner_config(session: AsyncSession) -> dict[str, Any]:
@@ -54,7 +57,7 @@ async def _read_scanner_config(session: AsyncSession) -> dict[str, Any]:
         await session.execute(
             text(
                 "SELECT interval_minutes, enabled, last_run_at, last_status, "
-                "       last_signal_count, last_reason, last_call_id "
+                "       last_signal_count, last_reason, last_call_id, system_prompt "
                 "  FROM scanner_config WHERE id = 1",
             ),
         )
@@ -71,6 +74,7 @@ async def _read_scanner_config(session: AsyncSession) -> dict[str, Any]:
             "last_signal_count": None,
             "last_reason": None,
             "last_call_id": None,
+            "system_prompt": None,
         }
     return {
         "interval_minutes": int(row[0]),
@@ -80,6 +84,7 @@ async def _read_scanner_config(session: AsyncSession) -> dict[str, Any]:
         "last_signal_count": row[4],
         "last_reason": row[5],
         "last_call_id": str(row[6]) if row[6] else None,
+        "system_prompt": row[7],
     }
 
 
@@ -107,6 +112,10 @@ async def patch_scanner_config(
     if body.enabled is not None:
         sets.append("enabled = :en")
         params["en"] = body.enabled
+    if body.system_prompt is not None:
+        # Empty string ⇒ reset to default (NULL in DB; scanner falls back).
+        sets.append("system_prompt = :sp")
+        params["sp"] = body.system_prompt.strip() or None
     if not sets:
         return await _read_scanner_config(session)
     sets.append("updated_at = now()")

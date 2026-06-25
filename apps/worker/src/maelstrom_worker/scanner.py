@@ -193,7 +193,7 @@ async def _load_config(sm: async_sessionmaker) -> dict[str, Any] | None:
         row = (
             await session.execute(
                 text(
-                    "SELECT interval_minutes, enabled, last_run_at "
+                    "SELECT interval_minutes, enabled, last_run_at, system_prompt "
                     "  FROM scanner_config WHERE id = 1",
                 ),
             )
@@ -204,6 +204,7 @@ async def _load_config(sm: async_sessionmaker) -> dict[str, Any] | None:
         "interval_minutes": int(row[0]),
         "enabled": bool(row[1]),
         "last_run_at": row[2],
+        "system_prompt": row[3],
     }
 
 
@@ -278,12 +279,14 @@ async def _scan_inner(ctx: dict[str, Any], sm: async_sessionmaker) -> dict[str, 
         await _record_run(sm, "no_data", reason="no OHLCV in lookback window")
         return {"status": "skipped", "reason": "no data"}
 
+    cfg = await _load_config(sm)
+    system_prompt = (cfg or {}).get("system_prompt") or SCANNER_SYSTEM
     try:
         result = await complete(
             sm,
             provider="anthropic",
             purpose="scan_opportunities",
-            system=SCANNER_SYSTEM,
+            system=system_prompt,
             user_message=(
                 "Top movers in the last 24h (1h-bar derived):\n\n"
                 + table
