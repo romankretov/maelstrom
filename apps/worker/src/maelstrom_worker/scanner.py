@@ -48,12 +48,11 @@ If nothing in the snapshot is compelling, output `[]`. Don't fabricate.
 """
 
 
-# `INTERVAL :literal` rejects bind params; CAST(text AS INTERVAL) is rejected
-# by asyncpg's strict codec; passing a bare timedelta tripped asyncpg's
-# prepare step ("operator does not exist: timestamptz >= interval") because
-# PG couldn't infer the parameter type in `now() - $n`. Explicit `::interval`
-# cast on the bind tells PG the type up front; the timedelta value is then
-# shipped via asyncpg's native interval codec.
+# asyncpg + PG kept fighting over the parameter type when we passed a
+# timedelta (even with CAST). Skip the interval codec entirely: pass an
+# integer count of seconds and build the interval from a literal inside
+# the query. PG sees `bigint * interval` → interval → timestamptz subtraction,
+# all unambiguous at prepare time.
 _TOP_MOVERS_SQL_TEMPLATE = """
     SELECT
         source, symbol,
@@ -65,7 +64,7 @@ _TOP_MOVERS_SQL_TEMPLATE = """
         COUNT(*)                                 AS bars
       FROM ohlcv
      WHERE timeframe = :tf
-       AND ts >= now() - CAST(:interval AS interval)
+       AND ts >= now() - (:lookback_seconds * INTERVAL '1 second')
      GROUP BY source, symbol
     HAVING COUNT(*) >= :min_bars
        AND (array_agg(close ORDER BY ts ASC))[1] > 0
@@ -85,17 +84,21 @@ async def _build_snapshot(sm: async_sessionmaker) -> tuple[list[dict[str, Any]],
     (e.g. fresh deploy with only live streams + no backfill).
     """
     queries = [
-        ("1h", timedelta(hours=25), "25 hours", 3),
-        ("1m", timedelta(minutes=90), "90 minutes", 30),
+        ("1h", 25 * 3600, "25 hours", 3),  # 25h in seconds
+        ("1m", 90 * 60, "90 minutes", 30),
     ]
     rows: list[Any] = []
     chosen: tuple[str, str, int] | None = None
     async with sm() as session:
-        for tf, interval, interval_label, min_bars in queries:
+        for tf, lookback_seconds, interval_label, min_bars in queries:
             r = (
                 await session.execute(
                     text(_TOP_MOVERS_SQL_TEMPLATE),
-                    {"tf": tf, "interval": interval, "min_bars": min_bars},
+                    {
+                        "tf": tf,
+                        "lookback_seconds": lookback_seconds,
+                        "min_bars": min_bars,
+                    },
                 )
             ).all()
             if r:
