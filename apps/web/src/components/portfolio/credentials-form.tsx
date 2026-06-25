@@ -27,6 +27,7 @@ export function CredentialsCard({ accountId }: { accountId: string }) {
   const { mutate } = useSWRConfig();
   const { data } = useSWR<CredentialState>(`/accounts/${accountId}/credentials`, fetcher);
   const [open, setOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [wallet, setWallet] = useState("");
   const [privateKey, setPrivateKey] = useState("");
   const [busy, setBusy] = useState(false);
@@ -87,7 +88,9 @@ export function CredentialsCard({ accountId }: { accountId: string }) {
             <Button
               variant="ghost"
               size="sm"
+              disabled={syncing}
               onClick={async () => {
+                setSyncing(true);
                 try {
                   await api(`/accounts/${accountId}/sync-balance`, { method: "POST" });
                   await mutate(`/accounts/${accountId}/portfolio`);
@@ -98,10 +101,12 @@ export function CredentialsCard({ accountId }: { accountId: string }) {
                       ? e.message
                       : String((e as { message?: string }).message ?? "Failed"),
                   );
+                } finally {
+                  setSyncing(false);
                 }
               }}
             >
-              Sync balance
+              {syncing ? "Syncing…" : "Sync balance"}
             </Button>
           )}
           {data?.has_credentials && (

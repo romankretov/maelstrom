@@ -28,18 +28,24 @@ function FundingSparkline({ points }: { points: FundingHistoryOut["points"] }) {
   const padX = 4;
   const padY = 8;
 
-  const x = (i: number) => padX + (i / (points.length - 1)) * (w - 2 * padX);
+  // Use real time for x-axis so missed funding ticks (worker downtime, network
+  // hiccups) show as actual gaps instead of being squashed into linear index
+  // spacing.
+  const tsMs = points.map((p) => new Date(p.ts).getTime());
+  const tMin = tsMs[0];
+  const tMax = tsMs[tsMs.length - 1];
+  const tSpan = tMax - tMin || 1;
+
+  const x = (i: number) => padX + ((tsMs[i] - tMin) / tSpan) * (w - 2 * padX);
   const y = (r: number) => padY + (1 - (r - min) / range) * (h - 2 * padY);
   const zeroY = y(0);
 
-  // Build path
   const d = points
     .map((p, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(2)} ${y(p.rate).toFixed(2)}`)
     .join(" ");
 
-  // First/last labels
-  const firstTs = new Date(points[0].ts);
-  const lastTs = new Date(points[points.length - 1].ts);
+  const firstTs = new Date(tMin);
+  const lastTs = new Date(tMax);
 
   return (
     <div className="overflow-hidden">

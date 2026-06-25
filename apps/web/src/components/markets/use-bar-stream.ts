@@ -57,6 +57,9 @@ export function useBarStream(
       } catch {
         /* noop */
       }
+      // Only clear the ref if it still points at the socket we created here —
+      // a rapid symbol switch may have already replaced it with a newer one.
+      if (wsRef.current === ws) wsRef.current = null;
     };
   }, [source, symbol, timeframe]);
 

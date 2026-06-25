@@ -1,4 +1,4 @@
-import { getToken } from "./auth";
+import { clearToken, getToken } from "./auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
@@ -12,6 +12,14 @@ export async function api<T>(path: string, init: RequestInit = {}, token?: strin
 
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers, cache: "no-store" });
   if (!res.ok) {
+    // Token expired or invalid — clear it and bounce to /login so the user
+    // doesn't keep staring at a cryptic "Unauthorized" toast.
+    if (res.status === 401 && typeof window !== "undefined") {
+      clearToken();
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.href = "/login";
+      }
+    }
     let message = res.statusText;
     try {
       const body = (await res.json()) as { detail?: string | { msg: string }[] };

@@ -189,20 +189,26 @@ async def correlation(
     for sym, ts, close in rows:
         by_ts[ts][sym] = float(close)
 
-    # Returns aligned by ts only when ALL requested symbols have a close.
+    # Returns aligned strictly by ts: only emit a return for a tick when ALL
+    # requested symbols have a close at both `prev` and `snap`. If any symbol
+    # misses a tick, we clear `prev` and resume only after the next snapshot
+    # where every symbol is present — otherwise a gap would silently produce
+    # multi-period returns for the missing symbol while neighbors get 1-period
+    # returns, biasing the correlation.
     returns: dict[str, list[float]] = {s: [] for s in body.symbols}
     prev: dict[str, float] = {}
     for ts in sorted(by_ts):
         snap = by_ts[ts]
-        if all(s in snap for s in body.symbols) and all(s in prev for s in body.symbols):
+        if not all(s in snap for s in body.symbols):
+            prev = {}
+            continue
+        if all(s in prev for s in body.symbols):
             for s in body.symbols:
                 cur = snap[s]
                 p = prev[s]
                 if p > 0:
                     returns[s].append(math.log(cur / p))
-        # Always update prev to current snap (even if not all present)
-        for s, c in snap.items():
-            prev[s] = c
+        prev = {s: snap[s] for s in body.symbols}
 
     n = len(body.symbols)
     matrix: list[list[float | None]] = [[None] * n for _ in range(n)]

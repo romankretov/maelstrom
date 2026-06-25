@@ -81,10 +81,24 @@ async def fetch_funding_history(
                         rate=float(rate),
                     ),
                 )
-            last_ts = int(chunk[-1].get("timestamp") or 0)
-            if last_ts <= cursor_ms:
+            # Use max timestamp across the chunk — the last item may be
+            # malformed (missing/None ts), and ccxt's exchange-specific parsers
+            # aren't always strictly time-ordered.
+            chunk_max_ts = max(
+                (int(item["timestamp"]) for item in chunk if item.get("timestamp")),
+                default=0,
+            )
+            if chunk_max_ts == 0:
+                log.warning(
+                    "funding.no_timestamps",
+                    source=source,
+                    symbol=symbol,
+                    chunk_size=len(chunk),
+                )
                 break
-            cursor_ms = last_ts + 1
+            if chunk_max_ts <= cursor_ms:
+                break
+            cursor_ms = chunk_max_ts + 1
             if len(chunk) < 1000:
                 break
             if until_ms is not None and cursor_ms >= until_ms:

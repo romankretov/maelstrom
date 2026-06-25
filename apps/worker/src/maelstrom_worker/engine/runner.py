@@ -7,7 +7,7 @@ slippage v1, simple fee_rate). Records equity curve + trades.
 
 import builtins
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -280,7 +280,10 @@ async def _ensure_bars(
     current = int((row or [0])[0])
 
     tf_sec = _TF_SECONDS.get(timeframe, 60)
-    expected = max(int((until - since).total_seconds() / tf_sec), 1)
+    # Clamp `until` to now so a future range_end doesn't inflate the expected
+    # count with bars that haven't happened yet (triggering wasted backfills).
+    horizon = min(until, datetime.now(UTC))
+    expected = max(int((horizon - since).total_seconds() / tf_sec), 1)
     if current >= int(expected * coverage_threshold):
         log.info(
             "backtest.bars.ok",

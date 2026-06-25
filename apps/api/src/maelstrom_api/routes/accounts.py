@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from maelstrom_api import audit, crypto
 from maelstrom_api.auth import current_active_user
 from maelstrom_api.db import get_session
-from maelstrom_api.hyperliquid_info import fetch_account_equity
+from maelstrom_api.hyperliquid_info import HyperliquidInfoError, fetch_account_equity
 from maelstrom_api.models import (
     Account,
     AccountEquity,
@@ -215,17 +215,28 @@ async def set_credentials(
     # the baseline (so return-% math is stable). The user can manually
     # PATCH starting_capital if they want to recalibrate.
     if acc.starting_capital == 0:
-        equity = await fetch_account_equity(
-            body.wallet_address,
-            testnet=(acc.kind == "live_hl_testnet"),
-        )
-        if equity is not None and equity > 0:
-            acc.starting_capital = Decimal(str(equity))
-            log.info(
-                "account.starting_capital.set_from_hl",
-                account_id=str(account_id),
-                equity=equity,
+        try:
+            equity = await fetch_account_equity(
+                body.wallet_address,
+                testnet=(acc.kind == "live_hl_testnet"),
             )
+        except HyperliquidInfoError as e:
+            # Network / HTTP failure: keep starting_capital at 0 but tell the
+            # user so they can hit Sync balance later instead of silently
+            # ending up with a useless return-% baseline.
+            log.warning(
+                "account.starting_capital.fetch_failed",
+                account_id=str(account_id),
+                error=str(e),
+            )
+        else:
+            if equity > 0:
+                acc.starting_capital = Decimal(str(equity))
+                log.info(
+                    "account.starting_capital.set_from_hl",
+                    account_id=str(account_id),
+                    equity=equity,
+                )
 
     await audit.record(
         session,
@@ -264,9 +275,13 @@ async def sync_balance(
             status.HTTP_400_BAD_REQUEST,
             "no wallet_address on account — add credentials first",
         )
-    equity = await fetch_account_equity(wallet, testnet=(acc.kind == "live_hl_testnet"))
-    if equity is None:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Hyperliquid info API unreachable")
+    try:
+        equity = await fetch_account_equity(wallet, testnet=(acc.kind == "live_hl_testnet"))
+    except HyperliquidInfoError as e:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"Hyperliquid info API failed: {e}",
+        ) from e
     acc.starting_capital = Decimal(str(equity))
     await audit.record(
         session,
