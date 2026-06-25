@@ -103,7 +103,13 @@ class HyperliquidBroker(Broker):
         config: dict[str, Any] = {
             "walletAddress": wallet,
             "privateKey": private_key,
-            "options": {"defaultType": "swap"},
+            "options": {
+                "defaultType": "swap",
+                # HL ccxt requires a price for market orders to cap slippage.
+                # 5% is the ccxt default; we pass last_price explicitly on
+                # every submit too, so this is just a safety net.
+                "defaultSlippage": 0.05,
+            },
         }
         if kind == "live_hl_testnet":
             config["test"] = True
@@ -139,11 +145,15 @@ class HyperliquidBroker(Broker):
         try:
             client = await self._client_or_die()
             raw = await self._resolve_raw(intent.symbol)
+            # HL's market-order path uses `price` to compute the max
+            # slippage bound (price * (1 ± defaultSlippage)). Pass the
+            # latest mark so it sizes the slippage band correctly.
             order = await client.create_order(
                 symbol=raw,
                 type="market",
                 side=intent.side,
                 amount=qty,
+                price=last_price,
             )
         except Exception as e:
             return await self._reject(intent, str(e)[:500], ts)
