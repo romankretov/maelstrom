@@ -27,21 +27,31 @@ The workflow:
 End goal: a strategy you wrote runs live on Hyperliquid (testnet first,
 mainnet only after you've smoke-tested).
 
-1. **Generate an agent wallet on Hyperliquid testnet.** Go to
-   https://app.hyperliquid-testnet.xyz → settings → API → "Generate an
-   agent wallet". The agent has trading rights only — it can't withdraw
-   funds. Copy its **wallet address** and **private key**.
-2. Fund the master wallet with testnet USDC from the faucet on the same
-   page. Approve the agent (one-time).
+1. **Fund the master wallet with testnet USDC** from the faucet on
+   https://app.hyperliquid-testnet.xyz. Copy your **master wallet
+   address** — this is the address that shows your USDC balance. You
+   will paste this into Maelstrom, NOT the agent address (see step 3).
+2. **Generate an agent wallet** in the same UI: Settings → API →
+   "Generate an agent wallet". The agent has trading rights only — it
+   can't withdraw funds. Copy its **private key** (the agent address
+   is irrelevant for Maelstrom — discard it). Approve the agent
+   (one-time on-chain action).
 3. **In Maelstrom UI** → `/portfolio` → **+ New account** → pick
-   **Hyperliquid testnet** → name it (e.g. `hl-testnet`), set a
-   reference starting capital (just for return-% math) → Create. The
+   **Hyperliquid testnet** → name it (e.g. `hl-testnet`) → Create. The
    new account auto-selects.
 4. The Credentials card appears below the account picker. Click **Add
-   credentials** → paste wallet address + private key → Save. The key
-   is encrypted with the VPS master key (libsodium SecretBox) before it
-   hits Postgres. It is never returned by any API and never written to
-   `audit_log` payloads.
+   credentials** → paste:
+   - **Master wallet address** (from step 1, your funded address)
+   - **Agent private key** (from step 2)
+   Save. The key is encrypted with the VPS master key (libsodium
+   SecretBox) before it hits Postgres. It is never returned by any API
+   and never written to `audit_log` payloads.
+
+   The pairing is: trades are signed by the agent's private key but
+   route to the master wallet for execution. We query the master for
+   equity. Mixing them up (using the agent's address as
+   `wallet_address`) is the most common setup mistake — it results in
+   `equity = $0` on Sync balance because the agent holds nothing.
 5. Go to `/strategies` → open a strategy → click **Run live**. Pick the
    `hl-testnet` account. Set **Max notional per symbol** as a safety
    belt — `100` is sensible while you're sanity-checking.

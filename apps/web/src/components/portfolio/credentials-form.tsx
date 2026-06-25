@@ -125,26 +125,31 @@ export function CredentialsCard({ accountId }: { accountId: string }) {
                 <DialogHeader>
                   <DialogTitle>Hyperliquid credentials</DialogTitle>
                   <DialogDescription>
-                    The private key is encrypted with the VPS master key (libsodium SecretBox)
-                    before it touches Postgres. It&apos;s never returned by any API. Use an{" "}
-                    <span className="underline">agent wallet</span> with limited permissions on
-                    testnet first.
+                    Pair an <b>agent wallet</b> with your <b>master wallet</b>: the agent&apos;s
+                    private key signs trades, but funds live on the master. The private key is
+                    encrypted with the VPS master key (libsodium SecretBox) before it touches
+                    Postgres. It&apos;s never returned by any API.
                   </DialogDescription>
                 </DialogHeader>
 
                 <div className="grid gap-3 py-4">
                   <div className="space-y-1">
-                    <Label htmlFor="wallet">Wallet address</Label>
+                    <Label htmlFor="wallet">Master wallet address</Label>
                     <Input
                       id="wallet"
                       value={wallet}
                       onChange={(e) => setWallet(e.target.value)}
-                      placeholder="0x…"
+                      placeholder="0x… (the wallet that holds your USDC)"
                       required
                     />
+                    <p className="text-[10px] text-muted-foreground">
+                      This is the wallet you funded via faucet/deposit — NOT the agent wallet
+                      address. We query this address for equity and route orders to it via the
+                      agent&apos;s signature.
+                    </p>
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="key">Private key</Label>
+                    <Label htmlFor="key">Agent private key</Label>
                     <Input
                       id="key"
                       type="password"
@@ -153,6 +158,10 @@ export function CredentialsCard({ accountId }: { accountId: string }) {
                       placeholder="0x… (encrypted on submit)"
                       required
                     />
+                    <p className="text-[10px] text-muted-foreground">
+                      Generate this in the HL UI: Settings → API → &quot;Generate an agent
+                      wallet&quot;. The agent can place orders but not withdraw funds.
+                    </p>
                   </div>
                 </div>
 
