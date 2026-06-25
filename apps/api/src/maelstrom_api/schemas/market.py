@@ -48,6 +48,19 @@ class BackfillRequest(BaseModel):
     range_end: datetime
 
 
+class BulkBackfillRequest(BaseModel):
+    source: str
+    symbols: list[str]  # one job per symbol x timeframe
+    timeframes: list[str]
+    range_start: datetime
+    range_end: datetime
+
+
+class BulkBackfillResponse(BaseModel):
+    queued: int
+    job_ids: list[uuid.UUID]
+
+
 class BackfillJobOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

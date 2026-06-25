@@ -6,6 +6,7 @@ import { fetcher } from "@/lib/api";
 import type { Source, Timeframe } from "@/lib/markets";
 import { InstrumentList } from "@/components/markets/instrument-list";
 import { ChartPanel } from "@/components/markets/chart-panel";
+import { BulkBackfillDialog } from "@/components/markets/bulk-backfill-dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -19,21 +20,24 @@ export default function MarketsPage() {
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
       <header className="flex items-baseline justify-between gap-4">
         <h1 className="text-2xl font-semibold">Markets</h1>
-        <div className="flex gap-1">
-          {sources?.map((s) => (
-            <Button
-              key={s.name}
-              variant={s.name === source ? "default" : "ghost"}
-              size="sm"
-              className={cn("h-8", s.name !== source && "text-muted-foreground")}
-              onClick={() => {
-                setSource(s.name);
-                setSymbol(null);
-              }}
-            >
-              {s.label}
-            </Button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1">
+            {sources?.map((s) => (
+              <Button
+                key={s.name}
+                variant={s.name === source ? "default" : "ghost"}
+                size="sm"
+                className={cn("h-8", s.name !== source && "text-muted-foreground")}
+                onClick={() => {
+                  setSource(s.name);
+                  setSymbol(null);
+                }}
+              >
+                {s.label}
+              </Button>
+            ))}
+          </div>
+          <BulkBackfillDialog source={source} />
         </div>
       </header>
       <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-[260px_1fr]">

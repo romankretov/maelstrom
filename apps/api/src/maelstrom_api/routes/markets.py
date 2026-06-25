@@ -24,6 +24,8 @@ from maelstrom_api.schemas.market import (
     BackfillJobOut,
     BackfillRequest,
     BarOut,
+    BulkBackfillRequest,
+    BulkBackfillResponse,
     InstrumentOut,
     SourceOut,
     TradeOut,
@@ -202,3 +204,54 @@ async def get_backfill(
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "backfill job not found")
     return job
+
+
+@router.post(
+    "/backfill/bulk",
+    response_model=BulkBackfillResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_bulk_backfill(
+    body: BulkBackfillRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    arq: Annotated[ArqRedis, Depends(get_arq_pool)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> BulkBackfillResponse:
+    """Create one BackfillJob per (symbol x timeframe) and enqueue them all.
+
+    Cap is 100 jobs per call so a fat-fingered "all 600 binance perps x 6
+    timeframes" can't flood the worker.
+    """
+    if body.range_start >= body.range_end:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "range_start must be before range_end",
+        )
+    if not body.symbols or not body.timeframes:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "need at least one symbol + timeframe")
+    for tf in body.timeframes:
+        _validate_timeframe(tf)
+    pairs = [(sym, tf) for sym in body.symbols for tf in body.timeframes]
+    if len(pairs) > 100:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"too many jobs ({len(pairs)}); cap is 100 per call",
+        )
+
+    jobs: list[BackfillJob] = []
+    for sym, tf in pairs:
+        jobs.append(
+            BackfillJob(
+                source=body.source,
+                symbol=sym,
+                timeframe=tf,
+                range_start=body.range_start,
+                range_end=body.range_end,
+                status=BackfillStatus.PENDING.value,
+            ),
+        )
+    session.add_all(jobs)
+    await session.commit()
+    for job in jobs:
+        await arq.enqueue_job("backfill_ohlcv", str(job.id))
+    return BulkBackfillResponse(queued=len(jobs), job_ids=[j.id for j in jobs])
