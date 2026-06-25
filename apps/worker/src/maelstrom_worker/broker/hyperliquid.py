@@ -111,9 +111,21 @@ class HyperliquidBroker(Broker):
                 "defaultSlippage": 0.05,
             },
         }
-        if kind == "live_hl_testnet":
-            config["test"] = True
         self._client = ccxtpro.hyperliquid(config)
+        if kind == "live_hl_testnet":
+            # `test: True` in the constructor doesn't reliably flip ccxt's
+            # HL URLs to testnet; using set_sandbox_mode is the canonical
+            # way and updates both REST and WS endpoints. Without this we
+            # were signing testnet agents but submitting to mainnet, which
+            # rejected with "User or API Wallet ... does not exist".
+            self._client.set_sandbox_mode(True)
+        log.info(
+            "hl.client.init",
+            account=self.account_id,
+            kind=kind,
+            wallet=wallet[:6] + "…" + wallet[-4:],
+            api_url=str(self._client.urls.get("api", "")),
+        )
         return self._client
 
     async def _resolve_raw(self, symbol: str) -> str:
