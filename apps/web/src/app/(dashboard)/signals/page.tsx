@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { fetcher } from "@/lib/api";
 import { type Signal, directionTone } from "@/lib/signals";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ScannerControl } from "@/components/signals/scanner-control";
 import { cn } from "@/lib/utils";
 
 function relTime(iso: string): string {
@@ -40,9 +41,11 @@ export default function Signals() {
       <header>
         <h1 className="text-2xl font-semibold">Signals</h1>
         <p className="text-sm text-muted-foreground">
-          AI-ranked opportunities — refreshed twice an hour by the worker. Not auto-traded.
+          AI-ranked opportunities. Not auto-traded. Adjust cadence below.
         </p>
       </header>
+
+      <ScannerControl />
 
       {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {error && (
@@ -53,9 +56,12 @@ export default function Signals() {
       {data && data.length === 0 && (
         <Card>
           <CardContent className="space-y-1 p-6 text-center text-sm text-muted-foreground">
-            <p>No signals yet. The scanner runs at :03 and :33 past every hour.</p>
+            <p>No active signals. Check the scanner status above — if the last run says</p>
+            <p>
+              <code>no_signals</code>, the LLM is finding nothing compelling in the snapshot.
+            </p>
             <p className="text-xs">
-              Configure an Anthropic key in <code>/settings</code> to enable it.
+              Set an Anthropic key in <code>/settings</code> if you haven&apos;t already.
             </p>
           </CardContent>
         </Card>

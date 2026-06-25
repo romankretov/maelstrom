@@ -62,8 +62,9 @@ class WorkerSettings:
         cron(tasks.sync_instruments, hour=3, minute=0),  # daily 03:00 UTC
         # Position reconciliation against Hyperliquid every 5 min.
         cron(tasks.reconcile_positions, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
-        # AI opportunity scanner — twice an hour, offset to avoid pileups.
-        cron(scan_opportunities, minute={3, 33}),
+        # AI opportunity scanner — task self-gates on scanner_config.interval_minutes.
+        # We tick every 5 min so user-configured intervals are honoured within 5 min.
+        cron(scan_opportunities, minute=set(range(0, 60, 5))),
         # Funding-rate history — hourly catch-up. Source caps to ~30 perps.
         cron(tasks.sync_funding_rates, minute=17),
     ]

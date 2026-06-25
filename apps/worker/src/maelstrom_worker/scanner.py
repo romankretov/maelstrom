@@ -185,14 +185,79 @@ _INSERT_SIGNAL_SQL = text(
 )
 
 
-async def scan_opportunities(ctx: dict[str, Any]) -> dict[str, Any]:
-    """Cron entry. Skipped silently if no anthropic key is configured."""
+async def _load_config(sm: async_sessionmaker) -> dict[str, Any] | None:
+    async with sm() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT interval_minutes, enabled, last_run_at "
+                    "  FROM scanner_config WHERE id = 1",
+                ),
+            )
+        ).first()
+    if row is None:
+        return None
+    return {
+        "interval_minutes": int(row[0]),
+        "enabled": bool(row[1]),
+        "last_run_at": row[2],
+    }
+
+
+async def _record_run(
+    sm: async_sessionmaker,
+    status: str,
+    *,
+    signal_count: int = 0,
+    reason: str | None = None,
+    call_id: str | None = None,
+) -> None:
+    async with sm() as session:
+        await session.execute(
+            text(
+                "UPDATE scanner_config SET "
+                "  last_run_at = now(), last_status = :st, "
+                "  last_signal_count = :n, last_reason = :r, "
+                "  last_call_id = CAST(:cid AS uuid), updated_at = now() "
+                "WHERE id = 1",
+            ),
+            {
+                "st": status[:32],
+                "n": signal_count,
+                "r": (reason or None) if reason is None else reason[:1000],
+                "cid": call_id,
+            },
+        )
+        await session.commit()
+
+
+async def scan_opportunities(ctx: dict[str, Any], force: bool = False) -> dict[str, Any]:
+    """Cron entry. Skipped silently if no anthropic key is configured.
+
+    The arq cron fires every 5 minutes and we gate here so users can adjust
+    cadence from the UI without redeploying. `force=True` runs unconditionally
+    (used by the "Run now" button).
+    """
     from .tasks import _sm  # reuse the cached session maker
 
     sm = _sm()
+
+    cfg = await _load_config(sm)
+    if cfg is None:
+        log.warning("scanner.no_config_row")
+    elif not force:
+        if not cfg["enabled"]:
+            return {"status": "disabled"}
+        last = cfg["last_run_at"]
+        if last is not None:
+            elapsed = (datetime.now(UTC) - last).total_seconds()
+            if elapsed < cfg["interval_minutes"] * 60:
+                return {"status": "not_due", "elapsed_s": int(elapsed)}
+
     rows, table = await _build_snapshot(sm)
     if not rows:
         log.info("scanner.no_data", reason="no 1h ohlcv in last 25h")
+        await _record_run(sm, "no_data", reason="no OHLCV in lookback window")
         return {"status": "skipped", "reason": "no data"}
 
     try:
@@ -212,11 +277,21 @@ async def scan_opportunities(ctx: dict[str, Any]) -> dict[str, Any]:
     except RuntimeError as e:
         # No key, disabled, etc — skip cleanly.
         log.info("scanner.skipped", reason=str(e))
+        await _record_run(sm, "llm_unavailable", reason=str(e))
         return {"status": "skipped", "reason": str(e)}
 
     signals = _parse_signals(result.text)
     if not signals:
         log.info("scanner.no_signals", call_id=result.call_id)
+        # Show the LLM's raw output so the user can see why nothing was
+        # produced (usually "[]" — model found nothing compelling).
+        preview = (result.text or "").strip()[:500]
+        await _record_run(
+            sm,
+            "no_signals",
+            reason=f"LLM returned no signals. Preview: {preview!r}",
+            call_id=result.call_id,
+        )
         return {"status": "ok", "signals": 0, "call_id": result.call_id}
 
     expires = datetime.now(UTC) + SIGNAL_TTL
@@ -247,6 +322,7 @@ async def scan_opportunities(ctx: dict[str, Any]) -> dict[str, Any]:
         )
         await session.commit()
     log.info("scanner.persisted", count=len(signals), call_id=result.call_id)
+    await _record_run(sm, "ok", signal_count=len(signals), call_id=result.call_id)
 
     # Notify subscribers about the highest-conviction signal in this batch.
     top = max(signals, key=lambda s: abs(float(s["score"])), default=None)
