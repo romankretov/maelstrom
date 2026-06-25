@@ -91,6 +91,7 @@ class LLMRouter:
         max_tokens: int = 4096,
         temperature: float = 0.5,
         cache_system: bool = True,
+        assistant_prefill: str = "",
     ) -> CompletionResult:
         if provider not in ("anthropic", "openai"):
             raise ValueError(f"unknown provider {provider}")
@@ -110,6 +111,7 @@ class LLMRouter:
                     max_tokens,
                     temperature,
                     cache_system,
+                    assistant_prefill,
                 )
             else:
                 text_out, ptoks, ctoks, cached_toks = await self._openai_call(
@@ -187,6 +189,7 @@ class LLMRouter:
         max_tokens: int,
         temperature: float,
         cache_system: bool,
+        assistant_prefill: str = "",
     ) -> tuple[str, int, int, int]:
         from anthropic import AsyncAnthropic
 
@@ -196,14 +199,22 @@ class LLMRouter:
             if cache_system
             else [{"type": "text", "text": system}]
         )
+        messages: list[dict[str, str]] = [{"role": "user", "content": user_message}]
+        if assistant_prefill:
+            # Anthropic's prefill: the model continues from this string,
+            # forcing structured output. The prefilled tokens come back
+            # only as our local prepend — they aren't in resp.content.
+            messages.append({"role": "assistant", "content": assistant_prefill})
         resp = await client.messages.create(
             model=model,
             max_tokens=max_tokens,
             temperature=temperature,
             system=sys_blocks,  # type: ignore[arg-type]
-            messages=[{"role": "user", "content": user_message}],
+            messages=messages,  # type: ignore[arg-type]
         )
         text_out = "".join((b.text if hasattr(b, "text") else "") for b in resp.content).strip()
+        if assistant_prefill:
+            text_out = assistant_prefill + text_out
         usage = resp.usage
         cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
         cache_create = getattr(usage, "cache_creation_input_tokens", 0) or 0

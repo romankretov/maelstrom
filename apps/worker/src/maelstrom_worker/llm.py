@@ -123,6 +123,7 @@ async def complete(
     model: str | None = None,
     max_tokens: int = 4096,
     temperature: float = 0.4,
+    assistant_prefill: str = "",
 ) -> CompletionResult:
     if provider not in ("anthropic", "openai"):
         raise ValueError(f"unknown provider {provider}")
@@ -137,14 +138,22 @@ async def complete(
             from anthropic import AsyncAnthropic
 
             client = AsyncAnthropic(api_key=api_key)
+            messages: list[dict[str, str]] = [{"role": "user", "content": user_message}]
+            if assistant_prefill:
+                # Anthropic prefill: the model continues from this string.
+                # Prefilled chars aren't echoed in resp.content, so we prepend
+                # them manually below for downstream parsers.
+                messages.append({"role": "assistant", "content": assistant_prefill})
             resp = await client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 system=system,
-                messages=[{"role": "user", "content": user_message}],
+                messages=messages,  # type: ignore[arg-type]
             )
             text_out = "".join((b.text if hasattr(b, "text") else "") for b in resp.content).strip()
+            if assistant_prefill:
+                text_out = assistant_prefill + text_out
             ptoks = resp.usage.input_tokens or 0
             ctoks = resp.usage.output_tokens or 0
         else:

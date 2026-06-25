@@ -351,7 +351,12 @@ async def _scan_inner(
                 + "\n\nReturn the JSON array per the system instructions."
             ),
             temperature=0.5,
-            max_tokens=2048,
+            # 4096 to leave headroom even if the model wants to ramble.
+            max_tokens=4096,
+            # Prefill forces the model into JSON-mode immediately: it
+            # continues from `[` instead of preambling with analysis prose
+            # and running out of tokens before reaching the array.
+            assistant_prefill="[",
         )
     except RuntimeError as e:
         # No key, disabled, etc — skip cleanly.
