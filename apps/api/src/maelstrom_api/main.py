@@ -13,6 +13,7 @@ from .routes import (
     accounts,
     admin,
     ai,
+    alerts,
     backtests,
     health,
     live_strategies,
@@ -81,5 +82,6 @@ def create_app() -> FastAPI:
     app.include_router(notifications.router)
     app.include_router(research.router)
     app.include_router(admin.router)
+    app.include_router(alerts.router)
     app.include_router(ws_markets.router)
     return app

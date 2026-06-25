@@ -19,6 +19,7 @@ class NotificationEvent(enum.StrEnum):
     KILL_ACCOUNT = "kill_account"
     BACKTEST_DONE = "backtest_done"
     SIGNAL_TOP = "signal_top"
+    PRICE_ALERT = "price_alert"
     LIVE_FAILED = "live_failed"
     FILL = "fill"
     ORDER_REJECTED = "order_rejected"

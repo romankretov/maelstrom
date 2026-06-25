@@ -5,6 +5,7 @@ from arq import cron
 from arq.connections import RedisSettings
 
 from . import tasks
+from .alerts import evaluate_alerts
 from .live import manager as live_manager
 from .notify import dispatch_notification
 from .scanner import scan_opportunities
@@ -55,6 +56,7 @@ class WorkerSettings:
         tasks.reconcile_positions,
         tasks.sync_funding_rates,
         scan_opportunities,
+        evaluate_alerts,
         dispatch_notification,
     ]
     cron_jobs: ClassVar = [
@@ -67,6 +69,8 @@ class WorkerSettings:
         cron(scan_opportunities, minute=set(range(0, 60, 5))),
         # Funding-rate history — hourly catch-up. Source caps to ~30 perps.
         cron(tasks.sync_funding_rates, minute=17),
+        # Alerts — every minute. Each row gated by its own cooldown.
+        cron(evaluate_alerts, second=30),
     ]
     on_startup = startup
     on_shutdown = shutdown

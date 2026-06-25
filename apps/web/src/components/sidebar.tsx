@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  Bell,
   FlaskConical,
   HeartPulse,
   LayoutDashboard,
@@ -22,6 +23,7 @@ const ITEMS = [
   { href: "/strategies", label: "Strategies", icon: Activity },
   { href: "/portfolio", label: "Portfolio", icon: Wallet },
   { href: "/signals", label: "Signals", icon: Signal },
+  { href: "/alerts", label: "Alerts", icon: Bell },
   { href: "/journal", label: "Journal", icon: MessageSquareText },
   { href: "/health", label: "Health", icon: HeartPulse },
   { href: "/settings", label: "Settings", icon: Settings },
