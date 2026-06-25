@@ -17,6 +17,7 @@ export type LiveStrategy = {
   params: Record<string, unknown>;
   status: LiveStatus;
   error: string | null;
+  shadow_mode: boolean;
   started_at: string | null;
   stopped_at: string | null;
   requester_id: string | null;

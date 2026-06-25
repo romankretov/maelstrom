@@ -57,6 +57,14 @@ export function LiveList({ strategyId }: { strategyId: string }) {
               >
                 {l.status.replace("_", " ")}
               </span>
+              {l.shadow_mode && (
+                <span
+                  className="rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase text-violet-300"
+                  title="Shadow mode — broker calls go to shadow_fills only, no real orders"
+                >
+                  shadow
+                </span>
+              )}
               <span className="font-mono text-xs">
                 {l.symbols.join(",")} · {l.timeframe} · {l.source}
               </span>

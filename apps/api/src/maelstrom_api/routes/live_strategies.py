@@ -3,8 +3,8 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import desc, select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import desc, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maelstrom_api import audit
@@ -18,7 +18,11 @@ from maelstrom_api.models import (
     StrategyVersion,
     User,
 )
-from maelstrom_api.schemas.live_strategy import LiveStrategyCreate, LiveStrategyOut
+from maelstrom_api.schemas.live_strategy import (
+    LiveStrategyCreate,
+    LiveStrategyOut,
+    ShadowFillOut,
+)
 
 router = APIRouter(
     prefix="/live-strategies",
@@ -101,6 +105,7 @@ async def create_and_start(
         params=body.params,
         max_notional_per_symbol=body.max_notional_per_symbol,
         max_position_qty=body.max_position_qty,
+        shadow_mode=body.shadow_mode,
         status=LiveStatus.PENDING_START.value,
         requester_id=user.id,
     )
@@ -191,3 +196,46 @@ async def get(
     if s is None or not _can_access_strategy(s, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not your strategy")
     return live
+
+
+@router.get("/{live_id}/shadow-fills", response_model=list[ShadowFillOut])
+async def shadow_fills(
+    live_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> list[ShadowFillOut]:
+    live = await session.get(LiveStrategy, live_id)
+    if live is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "live strategy not found")
+    s = await session.get(Strategy, live.strategy_id)
+    if s is None or not _can_access_strategy(s, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not your strategy")
+    rows = (
+        await session.execute(
+            text(
+                "SELECT id, live_strategy_id, ts, symbol, side, qty, price, "
+                "       notional, fee, pnl, reason "
+                "  FROM shadow_fills "
+                " WHERE live_strategy_id = :id "
+                " ORDER BY ts DESC LIMIT :n",
+            ),
+            {"id": live_id, "n": limit},
+        )
+    ).all()
+    return [
+        ShadowFillOut(
+            id=r[0],
+            live_strategy_id=r[1],
+            ts=r[2],
+            symbol=r[3],
+            side=r[4],
+            qty=float(r[5]),
+            price=float(r[6]),
+            notional=float(r[7]),
+            fee=float(r[8]),
+            pnl=float(r[9]),
+            reason=r[10],
+        )
+        for r in rows
+    ]

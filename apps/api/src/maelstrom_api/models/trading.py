@@ -110,6 +110,7 @@ class LiveStrategy(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     max_notional_per_symbol: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
     max_position_qty: Mapped[Decimal | None] = mapped_column(Numeric(28, 10), nullable=True)
+    shadow_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     requester_id: Mapped[uuid.UUID | None] = mapped_column(

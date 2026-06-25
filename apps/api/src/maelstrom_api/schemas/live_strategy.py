@@ -15,6 +15,7 @@ class LiveStrategyCreate(BaseModel):
     strategy_version_id: uuid.UUID | None = None
     max_notional_per_symbol: Decimal | None = None
     max_position_qty: Decimal | None = None
+    shadow_mode: bool = False
 
 
 class LiveStrategyOut(BaseModel):
@@ -32,8 +33,23 @@ class LiveStrategyOut(BaseModel):
     error: str | None = None
     max_notional_per_symbol: Decimal | None = None
     max_position_qty: Decimal | None = None
+    shadow_mode: bool = False
     started_at: datetime | None = None
     stopped_at: datetime | None = None
     requester_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class ShadowFillOut(BaseModel):
+    id: uuid.UUID
+    live_strategy_id: uuid.UUID
+    ts: datetime
+    symbol: str
+    side: str
+    qty: float
+    price: float
+    notional: float
+    fee: float
+    pnl: float
+    reason: str | None = None

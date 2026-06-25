@@ -29,6 +29,7 @@ export function RunLiveForm({ strategyId }: { strategyId: string }) {
   const [symbols, setSymbols] = useState("BTC-PERP");
   const [timeframe, setTimeframe] = useState("1m");
   const [maxNotional, setMaxNotional] = useState("");
+  const [shadowMode, setShadowMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,6 +52,7 @@ export function RunLiveForm({ strategyId }: { strategyId: string }) {
       if (maxNotional.trim()) {
         body.max_notional_per_symbol = maxNotional.trim();
       }
+      body.shadow_mode = shadowMode;
       await api<LiveStrategy>(`/live-strategies/strategies/${strategyId}`, {
         method: "POST",
         body: JSON.stringify(body),
@@ -136,6 +138,24 @@ export function RunLiveForm({ strategyId }: { strategyId: string }) {
                   onChange={(e) => setMaxNotional(e.target.value)}
                   placeholder="e.g. 5000 — reject if a fill would exceed this"
                 />
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <label className="flex items-start gap-2 rounded-md border p-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={shadowMode}
+                    onChange={(e) => setShadowMode(e.target.checked)}
+                    className="mt-0.5 h-4 w-4"
+                  />
+                  <span>
+                    <span className="font-medium">Shadow mode</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Subscribe to the live bar stream but record would-be fills to{" "}
+                      <code>shadow_fills</code> only — never touches the broker or real positions.
+                      Useful for validating against live market microstructure without capital risk.
+                    </span>
+                  </span>
+                </label>
               </div>
             </div>
           </div>
