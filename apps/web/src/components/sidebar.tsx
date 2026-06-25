@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   Activity,
   FlaskConical,
+  HeartPulse,
   LayoutDashboard,
   LineChart,
   MessageSquareText,
@@ -22,6 +23,7 @@ const ITEMS = [
   { href: "/portfolio", label: "Portfolio", icon: Wallet },
   { href: "/signals", label: "Signals", icon: Signal },
   { href: "/journal", label: "Journal", icon: MessageSquareText },
+  { href: "/health", label: "Health", icon: HeartPulse },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 

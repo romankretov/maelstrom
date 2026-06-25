@@ -11,6 +11,7 @@ from .auth import auth_backend, fastapi_users
 from .config import get_settings
 from .routes import (
     accounts,
+    admin,
     ai,
     backtests,
     health,
@@ -79,5 +80,6 @@ def create_app() -> FastAPI:
     app.include_router(signals.router)
     app.include_router(notifications.router)
     app.include_router(research.router)
+    app.include_router(admin.router)
     app.include_router(ws_markets.router)
     return app
