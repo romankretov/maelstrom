@@ -8,7 +8,7 @@ from typing import Annotated, Any
 from arq import ArqRedis
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, or_, select, text
+from sqlalchemy import desc, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maelstrom_api.auth import current_active_user
@@ -241,7 +241,11 @@ async def backtest_signal(
     )
 
     short_id = str(sig.id)[:8]
-    name = f"signal-{sig.symbol}-{sig.direction}-{short_id}"
+    # Timestamp suffix guarantees uniqueness across repeated clicks (Strategy.name
+    # has a UNIQUE constraint, so a second scaffold of the same signal would 500).
+    now = datetime.now(UTC)
+    stamp = now.strftime("%Y%m%d-%H%M%S")
+    name = f"signal-{sig.symbol}-{sig.direction}-{short_id}-{stamp}"
     strategy = Strategy(
         name=name,
         description=f"Auto-generated from signal {short_id} ({sig.rationale[:160]}).",
@@ -261,7 +265,6 @@ async def backtest_signal(
     session.add(version)
     await session.flush()
 
-    now = datetime.now(UTC)
     run = BacktestRun(
         strategy_id=strategy.id,
         strategy_version_id=version.id,
@@ -296,10 +299,13 @@ async def list_signals(
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> list[Signal]:
     cutoff = since or datetime.now(UTC) - timedelta(days=3)
+    # Only surface signals that haven't expired yet. Signals with NULL
+    # expires_at are pre-TTL artifacts — treat them as stale, not eternal.
     stmt = (
         select(Signal)
         .where(Signal.ts >= cutoff)
-        .where(or_(Signal.expires_at.is_(None), Signal.expires_at >= datetime.now(UTC)))
+        .where(Signal.expires_at.is_not(None))
+        .where(Signal.expires_at >= datetime.now(UTC))
         .order_by(desc(Signal.ts))
         .limit(limit)
     )

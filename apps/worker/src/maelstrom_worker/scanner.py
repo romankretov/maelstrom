@@ -217,6 +217,12 @@ async def _record_run(
     call_id: str | None = None,
 ) -> None:
     async with sm() as session:
+        # SELECT FOR UPDATE serializes concurrent runs (cron + manual Run-now
+        # racing each other) so telemetry doesn't tear: the second update
+        # waits for the first to commit before overwriting.
+        await session.execute(
+            text("SELECT 1 FROM scanner_config WHERE id = 1 FOR UPDATE"),
+        )
         await session.execute(
             text(
                 "UPDATE scanner_config SET "
@@ -259,7 +265,7 @@ async def scan_opportunities(ctx: dict[str, Any], force: bool = False) -> dict[s
                 return {"status": "not_due", "elapsed_s": int(elapsed)}
 
     try:
-        return await _scan_inner(ctx, sm)
+        return await _scan_inner(ctx, sm, cfg)
     except Exception as e:
         log.exception("scanner.error", error=str(e))
         # Best-effort: try to surface the error in the UI so the user
@@ -272,14 +278,17 @@ async def scan_opportunities(ctx: dict[str, Any], force: bool = False) -> dict[s
         return {"status": "error", "error": str(e)}
 
 
-async def _scan_inner(ctx: dict[str, Any], sm: async_sessionmaker) -> dict[str, Any]:
+async def _scan_inner(
+    ctx: dict[str, Any],
+    sm: async_sessionmaker,
+    cfg: dict[str, Any] | None,
+) -> dict[str, Any]:
     rows, table = await _build_snapshot(sm)
     if not rows:
         log.info("scanner.no_data", reason="no 1h ohlcv in last 25h")
         await _record_run(sm, "no_data", reason="no OHLCV in lookback window")
         return {"status": "skipped", "reason": "no data"}
 
-    cfg = await _load_config(sm)
     system_prompt = (cfg or {}).get("system_prompt") or SCANNER_SYSTEM
     try:
         result = await complete(
