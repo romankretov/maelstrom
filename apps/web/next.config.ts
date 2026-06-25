@@ -4,9 +4,7 @@ const config: NextConfig = {
   reactStrictMode: true,
   output: "standalone",
   poweredByHeader: false,
-  experimental: {
-    typedRoutes: true,
-  },
+  typedRoutes: true,
   async rewrites() {
     if (process.env.NODE_ENV !== "development") return [];
     return [

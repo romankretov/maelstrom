@@ -10,6 +10,7 @@ from fastapi_users.authentication import (
     JWTStrategy,
 )
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import get_settings
@@ -35,9 +36,21 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         user: User,
         request: Any | None = None,
     ) -> None:
-        # First registered user becomes admin; everyone else is viewer.
-        # TODO(phase 7): replace with proper admin invite flow.
-        pass
+        # First registered user becomes the admin/superuser. We pull the
+        # session off the SQLAlchemyUserDatabase (the concrete impl) — the
+        # base Protocol doesn't expose it, hence the cast.
+        from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
+
+        from .models.user import Role
+
+        assert isinstance(self.user_db, SQLAlchemyUserDatabase)
+        session = self.user_db.session
+        count = (await session.execute(select(func.count()).select_from(User))).scalar_one()
+        if count == 1:
+            user.is_superuser = True
+            user.role = Role.ADMIN
+            session.add(user)
+            await session.commit()
 
 
 async def get_user_manager(
