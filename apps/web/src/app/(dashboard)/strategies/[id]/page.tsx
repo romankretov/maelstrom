@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { CodeEditor } from "@/components/code-editor";
 import { AiGenerateDialog } from "@/components/strategies/ai-generate-dialog";
 import { BacktestForm } from "@/components/strategies/backtest-form";
+import { SweepForm } from "@/components/strategies/sweep-form";
 import { BacktestList } from "@/components/strategies/backtest-list";
 import { LiveList } from "@/components/strategies/live-list";
 import { RunLiveForm } from "@/components/strategies/run-live-form";
@@ -102,6 +103,7 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
             Archive
           </Button>
           <BacktestForm strategyId={id} />
+          <SweepForm strategyId={id} />
           <RunLiveForm strategyId={id} />
           <Button size="sm" onClick={save} disabled={busy || !dirty}>
             {busy ? "Saving…" : "Save version"}

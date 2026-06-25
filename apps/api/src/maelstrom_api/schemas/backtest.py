@@ -18,6 +18,26 @@ class BacktestCreate(BaseModel):
     strategy_version_id: uuid.UUID | None = None
 
 
+class SweepRequest(BaseModel):
+    """One numeric param swept across a linear range.
+
+    Inherits the base body's source/symbols/timeframe/range; only `params`
+    differs per generated run (with `param_name` overridden by each value).
+    """
+
+    base: BacktestCreate
+    param_name: str = Field(min_length=1, max_length=64)
+    start: float
+    stop: float  # inclusive
+    steps: int = Field(ge=2, le=50)
+
+
+class SweepResponse(BaseModel):
+    queued: int
+    backtest_run_ids: list[uuid.UUID]
+    values: list[float]
+
+
 class BacktestRunOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

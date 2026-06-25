@@ -25,6 +25,8 @@ from maelstrom_api.schemas.backtest import (
     BacktestCreate,
     BacktestRunOut,
     EquityPointOut,
+    SweepRequest,
+    SweepResponse,
     TradeOut,
 )
 
@@ -116,6 +118,90 @@ async def create_backtest(
 
     await arq.enqueue_job("run_backtest", str(run.id))
     return run
+
+
+# ---------------------------------------------------------------- sweep
+
+
+@router.post(
+    "/strategies/{strategy_id}/sweep",
+    response_model=SweepResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def sweep_backtest(
+    strategy_id: uuid.UUID,
+    body: SweepRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    arq: Annotated[ArqRedis, Depends(get_arq_pool)],
+) -> SweepResponse:
+    """Queue N backtest runs of the same strategy varying one numeric param.
+
+    Pairs with the /backtests/compare page — frontend navigates there with
+    the returned ids when the sweep finishes.
+    """
+    s = await session.get(Strategy, strategy_id)
+    if s is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "strategy not found")
+    if not _can_access_strategy(s, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not your strategy")
+    if body.base.range_start >= body.base.range_end:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "range_start must be before range_end")
+    if body.base.strategy_version_id is not None:
+        version = await session.get(StrategyVersion, body.base.strategy_version_id)
+        if version is None or version.strategy_id != strategy_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid strategy_version_id")
+    else:
+        version = await _latest_version(session, strategy_id)
+        if version is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "strategy has no versions")
+
+    # Inclusive linear spread.
+    step = (body.stop - body.start) / (body.steps - 1)
+    values = [body.start + i * step for i in range(body.steps)]
+
+    runs: list[BacktestRun] = []
+    for v in values:
+        run_params = dict(body.base.params)
+        run_params[body.param_name] = v
+        runs.append(
+            BacktestRun(
+                strategy_id=strategy_id,
+                strategy_version_id=version.id,
+                source=body.base.source,
+                symbols=body.base.symbols,
+                timeframe=body.base.timeframe,
+                range_start=body.base.range_start,
+                range_end=body.base.range_end,
+                initial_capital=body.base.initial_capital,
+                params=run_params,
+                status=BacktestStatus.PENDING.value,
+                requester_id=user.id,
+            ),
+        )
+    session.add_all(runs)
+    await audit.record(
+        session,
+        action="backtest.sweep",
+        actor_id=user.id,
+        target_kind="strategy",
+        target_id=str(strategy_id),
+        payload={
+            "param_name": body.param_name,
+            "start": body.start,
+            "stop": body.stop,
+            "steps": body.steps,
+            "values": values,
+        },
+    )
+    await session.commit()
+    for run in runs:
+        await arq.enqueue_job("run_backtest", str(run.id))
+    return SweepResponse(
+        queued=len(runs),
+        backtest_run_ids=[r.id for r in runs],
+        values=values,
+    )
 
 
 # ---------------------------------------------------------------- read
