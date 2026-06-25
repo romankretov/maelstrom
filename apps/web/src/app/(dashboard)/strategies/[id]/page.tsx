@@ -16,6 +16,7 @@ import { SweepForm } from "@/components/strategies/sweep-form";
 import { BacktestList } from "@/components/strategies/backtest-list";
 import { LiveList } from "@/components/strategies/live-list";
 import { RunLiveForm } from "@/components/strategies/run-live-form";
+import { SdkReference } from "@/components/strategies/sdk-reference";
 
 export default function StrategyEditor({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -162,6 +163,7 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
         </Card>
 
         <div className="space-y-4">
+          <SdkReference />
           <LiveList strategyId={id} />
           <BacktestList strategyId={id} />
 
