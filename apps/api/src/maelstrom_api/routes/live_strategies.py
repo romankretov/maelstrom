@@ -1,7 +1,7 @@
 """Start/stop/list live strategies."""
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import desc, select, text
@@ -161,6 +161,87 @@ async def stop(
 
 
 # ---------------------------------------------------------------- list / read
+
+
+class LiveStrategyRow(LiveStrategyOut):
+    """Same as LiveStrategyOut + display-friendly joins."""
+
+    strategy_name: str | None = None
+    account_name: str | None = None
+    account_kind: str | None = None
+    realized_pnl: float = 0.0  # sum from fills attributed to this live run
+
+
+@router.get("", response_model=list[LiveStrategyRow])
+async def list_all(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+) -> list[LiveStrategyRow]:
+    """All live strategies the caller can see.
+
+    Admins see everything. Regular users see only runs whose underlying
+    strategy belongs to them. Defaults to running + pending_* unless
+    `?status=<value>` is passed.
+    """
+    where_clauses: list[str] = []
+    params: dict[str, Any] = {}
+    if status_filter is None:
+        where_clauses.append("ls.status IN ('running', 'pending_start', 'pending_stop')")
+    else:
+        where_clauses.append("ls.status = :status")
+        params["status"] = status_filter
+    if not user.is_superuser:
+        where_clauses.append("s.owner_id = :uid")
+        params["uid"] = user.id
+    where_sql = " AND ".join(where_clauses)
+    base_sql = (
+        "SELECT "
+        "  ls.id, ls.strategy_id, ls.strategy_version_id, ls.account_id, ls.source, "
+        "  ls.symbols, ls.timeframe, ls.params, ls.status, ls.error, "
+        "  ls.max_notional_per_symbol, ls.max_position_qty, ls.shadow_mode, "
+        "  ls.started_at, ls.stopped_at, ls.requester_id, "
+        "  ls.created_at, ls.updated_at, "
+        "  s.name AS strategy_name, a.name AS account_name, a.kind AS account_kind, "
+        "  COALESCE(("
+        "    SELECT SUM(f.pnl) FROM fills f JOIN orders o ON o.id = f.order_id "
+        "     WHERE o.live_strategy_id = ls.id"
+        "  ), 0) AS realized_pnl "
+        "  FROM live_strategies ls "
+        "  JOIN strategies s ON s.id = ls.strategy_id "
+        "  JOIN accounts a ON a.id = ls.account_id"
+    )
+    # where_sql is composed from string constants above (no user input) —
+    # the dynamic part of the query is only the static branch selection.
+    sql = base_sql + f" WHERE {where_sql} ORDER BY ls.created_at DESC LIMIT 200"
+    rows = (await session.execute(text(sql), params)).mappings().all()
+    return [
+        LiveStrategyRow(
+            id=r["id"],
+            strategy_id=r["strategy_id"],
+            strategy_version_id=r["strategy_version_id"],
+            account_id=r["account_id"],
+            source=r["source"],
+            symbols=list(r["symbols"]),
+            timeframe=r["timeframe"],
+            params=r["params"] or {},
+            status=r["status"],
+            error=r["error"],
+            max_notional_per_symbol=r["max_notional_per_symbol"],
+            max_position_qty=r["max_position_qty"],
+            shadow_mode=bool(r["shadow_mode"]),
+            started_at=r["started_at"],
+            stopped_at=r["stopped_at"],
+            requester_id=r["requester_id"],
+            created_at=r["created_at"],
+            updated_at=r["updated_at"],
+            strategy_name=r["strategy_name"],
+            account_name=r["account_name"],
+            account_kind=r["account_kind"],
+            realized_pnl=float(r["realized_pnl"] or 0),
+        )
+        for r in rows
+    ]
 
 
 @router.get("/strategies/{strategy_id}", response_model=list[LiveStrategyOut])
