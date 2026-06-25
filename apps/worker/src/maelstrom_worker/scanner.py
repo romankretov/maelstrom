@@ -139,18 +139,61 @@ async def _build_snapshot(sm: async_sessionmaker) -> tuple[list[dict[str, Any]],
     return out_rows, "\n".join(lines)
 
 
-_FENCE_RE = re.compile(r"^```(?:json)?\s*([\s\S]*?)```\s*$", re.IGNORECASE)
+_FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
+
+
+def _extract_json_array(text_raw: str) -> str | None:
+    """Pull the largest balanced [...] block out of an arbitrary LLM response.
+
+    The system prompt asks for JSON-only output, but models sometimes
+    preamble with analysis prose or wrap the array in markdown fences.
+    We try, in order: fenced block, then the first balanced [ ... ] in
+    the whole response. Returns None if neither yields a parseable array.
+    """
+    # 1. Fenced ```json ... ``` block, if present.
+    m = _FENCE_RE.search(text_raw)
+    if m:
+        candidate = m.group(1).strip()
+        if candidate.startswith("["):
+            return candidate
+    # 2. Any balanced top-level [ ... ] block. Walk char-by-char tracking
+    #    bracket depth and ignoring quoted strings (so [ inside a string
+    #    doesn't fool us).
+    in_string = False
+    escape = False
+    depth = 0
+    start = -1
+    for i, ch in enumerate(text_raw):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_string:
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "[":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "]":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    return text_raw[start : i + 1]
+    return None
 
 
 def _parse_signals(raw: str) -> list[dict[str, Any]]:
     text_raw = raw.strip()
-    m = _FENCE_RE.match(text_raw)
-    if m:
-        text_raw = m.group(1).strip()
+    candidate = _extract_json_array(text_raw) or text_raw
     try:
-        data = json.loads(text_raw)
+        data = json.loads(candidate)
     except json.JSONDecodeError as e:
-        log.warning("scanner.parse_failed", error=str(e), preview=text_raw[:200])
+        log.warning("scanner.parse_failed", error=str(e), preview=text_raw[:300])
         return []
     if not isinstance(data, list):
         return []
