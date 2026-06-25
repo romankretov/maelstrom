@@ -192,6 +192,23 @@ class LiveManager:
             task.cancel()
         self._runners.pop(live_id, None)
         self._tasks.pop(live_id, None)
+        # If the row was orphaned (worker restarted while pending_stop), the
+        # runner was never spawned this process, so its own stop path never
+        # ran — we still need to flip the row to 'stopped' here, otherwise
+        # _tick() keeps re-selecting it forever and we spam this log.
+        sm = await self._ensure_db()
+        async with sm() as session:
+            await session.execute(
+                text(
+                    "UPDATE live_strategies "
+                    "   SET status = 'stopped', "
+                    "       stopped_at = COALESCE(stopped_at, now()), "
+                    "       updated_at = now() "
+                    " WHERE id = :id AND status IN ('pending_stop', 'pending_start')",
+                ),
+                {"id": live_id},
+            )
+            await session.commit()
         log.info("live.manager.cancelled", id=live_id)
 
 

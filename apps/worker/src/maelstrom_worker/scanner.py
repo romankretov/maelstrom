@@ -48,6 +48,8 @@ If nothing in the snapshot is compelling, output `[]`. Don't fabricate.
 """
 
 
+# `INTERVAL :interval` is invalid Postgres — INTERVAL only accepts string
+# literals, not bind parameters. Cast the parameter to an interval instead.
 _TOP_MOVERS_SQL_TEMPLATE = """
     SELECT
         source, symbol,
@@ -59,7 +61,7 @@ _TOP_MOVERS_SQL_TEMPLATE = """
         COUNT(*)                                 AS bars
       FROM ohlcv
      WHERE timeframe = :tf
-       AND ts >= now() - INTERVAL :interval
+       AND ts >= now() - CAST(:interval AS INTERVAL)
      GROUP BY source, symbol
     HAVING COUNT(*) >= :min_bars
        AND (array_agg(close ORDER BY ts ASC))[1] > 0
@@ -254,6 +256,21 @@ async def scan_opportunities(ctx: dict[str, Any], force: bool = False) -> dict[s
             if elapsed < cfg["interval_minutes"] * 60:
                 return {"status": "not_due", "elapsed_s": int(elapsed)}
 
+    try:
+        return await _scan_inner(ctx, sm)
+    except Exception as e:
+        log.exception("scanner.error", error=str(e))
+        # Best-effort: try to surface the error in the UI so the user
+        # doesn't see a silent "never ran". If even this write fails, the
+        # task is already lost — swallow to avoid cascading.
+        try:
+            await _record_run(sm, "error", reason=f"{type(e).__name__}: {e}"[:1000])
+        except Exception as record_err:
+            log.warning("scanner.record_failed", error=str(record_err))
+        return {"status": "error", "error": str(e)}
+
+
+async def _scan_inner(ctx: dict[str, Any], sm: async_sessionmaker) -> dict[str, Any]:
     rows, table = await _build_snapshot(sm)
     if not rows:
         log.info("scanner.no_data", reason="no 1h ohlcv in last 25h")
