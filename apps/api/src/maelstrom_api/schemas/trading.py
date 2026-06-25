@@ -100,6 +100,27 @@ class PortfolioSummary(BaseModel):
     recent_fills: list[FillOut]
 
 
+class PnlAttributionRow(BaseModel):
+    """One bucket of realized PnL, keyed by (strategy or None, symbol)."""
+
+    live_strategy_id: uuid.UUID | None = None
+    strategy_id: uuid.UUID | None = None
+    strategy_name: str | None = None
+    symbol: str
+    realized_pnl: float
+    fees: float
+    fills: int
+    first_fill: datetime | None = None
+    last_fill: datetime | None = None
+
+
+class PnlAttribution(BaseModel):
+    account_id: uuid.UUID
+    rows: list[PnlAttributionRow]
+    total_realized: float
+    total_fees: float
+
+
 class EquityPointOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -32,6 +32,8 @@ from maelstrom_api.schemas.trading import (
     EquityPointOut,
     FillOut,
     OrderOut,
+    PnlAttribution,
+    PnlAttributionRow,
     PortfolioSummary,
     PositionOut,
 )
@@ -487,6 +489,65 @@ async def get_portfolio(
         open_positions=open_count,
         positions=[PositionOut.model_validate(p) for p in positions],
         recent_fills=[FillOut.model_validate(f) for f in recent_fills],
+    )
+
+
+@router.get("/{account_id}/pnl-attribution", response_model=PnlAttribution)
+async def get_pnl_attribution(
+    account_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> PnlAttribution:
+    """Realized PnL bucketed by (live_strategy, symbol).
+
+    Joins fills → orders → live_strategies → strategies. Fills with no
+    live_strategy_id (manual / paper without a runner) bucket under
+    strategy=None so they're still visible.
+    """
+    await _load_account_or_403(session, account_id, user)
+    rows = (
+        await session.execute(
+            text(
+                "SELECT "
+                "  o.live_strategy_id AS lsid, "
+                "  ls.strategy_id    AS sid, "
+                "  s.name            AS sname, "
+                "  f.symbol          AS symbol, "
+                "  SUM(f.pnl)        AS realized, "
+                "  SUM(f.fee)        AS fees, "
+                "  COUNT(*)          AS fills, "
+                "  MIN(f.ts)         AS first_fill, "
+                "  MAX(f.ts)         AS last_fill "
+                "  FROM fills f "
+                "  JOIN orders o ON o.id = f.order_id "
+                "  LEFT JOIN live_strategies ls ON ls.id = o.live_strategy_id "
+                "  LEFT JOIN strategies s ON s.id = ls.strategy_id "
+                " WHERE f.account_id = :acc "
+                " GROUP BY o.live_strategy_id, ls.strategy_id, s.name, f.symbol "
+                " ORDER BY SUM(f.pnl) DESC",
+            ),
+            {"acc": account_id},
+        )
+    ).all()
+    out_rows = [
+        PnlAttributionRow(
+            live_strategy_id=r[0],
+            strategy_id=r[1],
+            strategy_name=r[2],
+            symbol=r[3],
+            realized_pnl=float(r[4] or 0),
+            fees=float(r[5] or 0),
+            fills=int(r[6]),
+            first_fill=r[7],
+            last_fill=r[8],
+        )
+        for r in rows
+    ]
+    return PnlAttribution(
+        account_id=account_id,
+        rows=out_rows,
+        total_realized=sum(r.realized_pnl for r in out_rows),
+        total_fees=sum(r.fees for r in out_rows),
     )
 
 
