@@ -13,6 +13,7 @@ import {
   fmtPct,
 } from "@/lib/backtests";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SweepCurve } from "@/components/backtests/sweep-curve";
 import { cn } from "@/lib/utils";
 
 // Color palette for the overlay — keep it readable on dark backgrounds.
@@ -331,6 +332,15 @@ function CompareInner() {
 
       {loaded.length >= 2 && (
         <>
+          <Card>
+            <CardHeader className="p-4 pb-2">
+              <CardTitle className="text-base">Sweep curve</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 pt-2">
+              <SweepCurve runs={loaded.map((r) => r.run)} />
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader className="p-4 pb-2">
               <CardTitle className="text-base">Equity (% return)</CardTitle>
