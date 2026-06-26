@@ -19,6 +19,8 @@ from maelstrom_api.models import (
     User,
 )
 from maelstrom_api.schemas.live_strategy import (
+    LiveEventOut,
+    LiveSnapshot,
     LiveStrategyCreate,
     LiveStrategyOut,
     ShadowFillOut,
@@ -277,6 +279,139 @@ async def get(
     if s is None or not _can_access_strategy(s, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not your strategy")
     return live
+
+
+@router.get("/{live_id}/events", response_model=list[LiveEventOut])
+async def list_events(
+    live_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> list[LiveEventOut]:
+    live = await session.get(LiveStrategy, live_id)
+    if live is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "live strategy not found")
+    s = await session.get(Strategy, live.strategy_id)
+    if s is None or not _can_access_strategy(s, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not your strategy")
+    rows = (
+        await session.execute(
+            text(
+                "SELECT id, ts, kind, payload FROM live_events "
+                " WHERE live_strategy_id = :id "
+                " ORDER BY ts DESC LIMIT :n",
+            ),
+            {"id": live_id, "n": limit},
+        )
+    ).all()
+    return [LiveEventOut(id=r[0], ts=r[1], kind=r[2], payload=r[3] or {}) for r in rows]
+
+
+@router.get("/{live_id}/snapshot", response_model=LiveSnapshot)
+async def snapshot(
+    live_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> LiveSnapshot:
+    """One-call view of a running strategy: current account state +
+    open positions + recent fills + recent events. Powers the runtime
+    dashboard so the UI doesn't have to fan out N requests."""
+    live = await session.get(LiveStrategy, live_id)
+    if live is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "live strategy not found")
+    s = await session.get(Strategy, live.strategy_id)
+    if s is None or not _can_access_strategy(s, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not your strategy")
+
+    # Open positions for the account (a strategy may hold positions in
+    # multiple symbols).
+    pos_rows = (
+        await session.execute(
+            text(
+                "SELECT symbol, qty, avg_price, last_price, realized_pnl "
+                "  FROM positions "
+                " WHERE account_id = :a AND qty != 0",
+            ),
+            {"a": live.account_id},
+        )
+    ).all()
+    positions = [
+        {
+            "symbol": r[0],
+            "qty": float(r[1]),
+            "avg_price": float(r[2]),
+            "last_price": float(r[3]),
+            "unrealized_pnl": (float(r[3]) - float(r[2])) * float(r[1]),
+            "realized_pnl": float(r[4]),
+        }
+        for r in pos_rows
+    ]
+
+    # Recent fills attributed to this live strategy.
+    fill_rows = (
+        await session.execute(
+            text(
+                "SELECT f.ts, f.symbol, f.side, f.qty, f.price, f.fee, f.pnl, o.reason "
+                "  FROM fills f JOIN orders o ON o.id = f.order_id "
+                " WHERE o.live_strategy_id = :id "
+                " ORDER BY f.ts DESC LIMIT 20",
+            ),
+            {"id": live_id},
+        )
+    ).all()
+    recent_fills = [
+        {
+            "ts": r[0].isoformat(),
+            "symbol": r[1],
+            "side": r[2],
+            "qty": float(r[3]),
+            "price": float(r[4]),
+            "fee": float(r[5]),
+            "pnl": float(r[6]),
+            "reason": r[7],
+        }
+        for r in fill_rows
+    ]
+
+    event_rows = (
+        await session.execute(
+            text(
+                "SELECT id, ts, kind, payload FROM live_events "
+                " WHERE live_strategy_id = :id "
+                " ORDER BY ts DESC LIMIT 50",
+            ),
+            {"id": live_id},
+        )
+    ).all()
+    events = [LiveEventOut(id=r[0], ts=r[1], kind=r[2], payload=r[3] or {}) for r in event_rows]
+
+    # Cash + equity: derive from account state. The live runner persists
+    # account_equity rows periodically; pick the newest.
+    eq_row = (
+        await session.execute(
+            text(
+                "SELECT cash, equity, realized_pnl FROM account_equity "
+                " WHERE account_id = :a ORDER BY ts DESC LIMIT 1",
+            ),
+            {"a": live.account_id},
+        )
+    ).first()
+    cash = float(eq_row[0]) if eq_row else None
+    equity = float(eq_row[1]) if eq_row else None
+    realized_pnl = float(eq_row[2]) if eq_row else None
+
+    return LiveSnapshot(
+        live_strategy_id=live_id,
+        status=live.status,
+        error=live.error,
+        started_at=live.started_at,
+        cash=cash,
+        equity=equity,
+        realized_pnl=realized_pnl,
+        positions=positions,
+        recent_fills=recent_fills,
+        events=events,
+    )
 
 
 @router.get("/{live_id}/shadow-fills", response_model=list[ShadowFillOut])

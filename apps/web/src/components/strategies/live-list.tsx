@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import useSWR, { useSWRConfig } from "swr";
 import { api, fetcher } from "@/lib/api";
 import { type LiveStatus, type LiveStrategy, liveStatusColor } from "@/lib/live-strategies";
@@ -74,17 +75,22 @@ export function LiveList({ strategyId }: { strategyId: string }) {
                 </span>
               )}
             </div>
-            {isStoppable(l.status) && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 text-xs"
-                onClick={() => stop(l.id)}
-                disabled={busy === l.id}
-              >
-                {busy === l.id ? "…" : "Stop"}
+            <div className="flex items-center gap-1">
+              <Button asChild size="sm" variant="ghost" className="h-6 text-xs">
+                <Link href={`/strategies/${strategyId}/runs/${l.id}`}>Details</Link>
               </Button>
-            )}
+              {isStoppable(l.status) && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 text-xs"
+                  onClick={() => stop(l.id)}
+                  disabled={busy === l.id}
+                >
+                  {busy === l.id ? "…" : "Stop"}
+                </Button>
+              )}
+            </div>
           </div>
         ))}
       </CardContent>

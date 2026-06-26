@@ -196,6 +196,29 @@ class LiveRunner:
             "starting_capital": float(row[6]),
         }
 
+    async def _emit_event(
+        self,
+        kind: str,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Append a row to live_events. Best-effort — never raises."""
+        try:
+            async with self.sm() as session:
+                await session.execute(
+                    text(
+                        "INSERT INTO live_events (live_strategy_id, kind, payload) "
+                        "VALUES (:lsid, :kind, CAST(:payload AS jsonb))",
+                    ),
+                    {
+                        "lsid": self.live_strategy_id,
+                        "kind": kind[:32],
+                        "payload": orjson.dumps(payload or {}).decode("utf-8"),
+                    },
+                )
+                await session.commit()
+        except Exception as e:
+            log.warning("live.event.persist_failed", error=str(e))
+
     async def _set_status(self, status: str, error: str | None = None) -> None:
         # asyncpg can't deduce a single type for a bind param reused across
         # a varchar column assignment AND text-literal comparisons. Precompute
@@ -388,11 +411,52 @@ class LiveRunner:
             strategy.on_bar(bar)
         except Exception as e:
             log.exception("live.on_bar_raised", id=self.live_strategy_id, error=str(e))
+            await self._emit_event(
+                "on_bar_error",
+                {"symbol": bar.symbol, "error": f"{type(e).__name__}: {e}"[:500]},
+            )
             return
+
+        # Only emit a bar event when something happened — otherwise the log
+        # fills with noise on every tick. If a strategy queued intents this
+        # bar OR has an open position, surface it.
+        any_position = any(p.qty != 0 for p in ctx.positions.values())
+        if ctx.pending_intents or any_position:
+            await self._emit_event(
+                "on_bar",
+                {
+                    "symbol": bar.symbol,
+                    "ts": bar.ts.isoformat(),
+                    "close": bar.close,
+                    "intents": len(ctx.pending_intents),
+                },
+            )
 
         for intent in ctx.pending_intents:
             last = ctx.last_prices.get(intent.symbol, 0.0)
+            await self._emit_event(
+                "submit",
+                {
+                    "symbol": intent.symbol,
+                    "side": intent.side,
+                    "qty": intent.qty,
+                    "notional": intent.notional,
+                    "reason": intent.reason,
+                },
+            )
             result = await self.broker.submit(intent, last)
+            await self._emit_event(
+                "fill" if result.status == "filled" else "reject",
+                {
+                    "symbol": intent.symbol,
+                    "side": intent.side,
+                    "status": result.status,
+                    "filled_qty": result.filled_qty,
+                    "avg_fill_price": result.avg_fill_price,
+                    "pnl": result.pnl,
+                    "error": result.error,
+                },
+            )
             if result.status == "filled":
                 signed = result.filled_qty if intent.side == "buy" else -result.filled_qty
                 ctx.apply_fill(

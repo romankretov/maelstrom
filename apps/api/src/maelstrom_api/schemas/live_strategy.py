@@ -53,3 +53,27 @@ class ShadowFillOut(BaseModel):
     fee: float
     pnl: float
     reason: str | None = None
+
+
+class LiveEventOut(BaseModel):
+    id: uuid.UUID
+    ts: datetime
+    kind: str
+    payload: dict[str, Any]
+
+
+class LiveSnapshot(BaseModel):
+    """Combined "what is this strategy doing right now" payload — equity,
+    open positions, last error, recent events. One call to power the
+    runtime dashboard."""
+
+    live_strategy_id: uuid.UUID
+    status: str
+    error: str | None = None
+    started_at: datetime | None = None
+    cash: float | None = None
+    equity: float | None = None
+    realized_pnl: float | None = None
+    positions: list[dict[str, Any]]
+    recent_fills: list[dict[str, Any]]
+    events: list[LiveEventOut]
