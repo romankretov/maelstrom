@@ -348,15 +348,17 @@ async def _scan_inner(
             user_message=(
                 "Top movers in the last 24h (1h-bar derived):\n\n"
                 + table
-                + "\n\nReturn the JSON array per the system instructions."
+                + "\n\nReturn the JSON array per the system instructions. "
+                "Do NOT include any text before or after the array — your "
+                "entire response must be parseable as JSON."
             ),
             temperature=0.5,
-            # 4096 to leave headroom even if the model wants to ramble.
+            # 4096 leaves headroom even if the model rambles. The parser
+            # in _parse_signals already pulls the JSON array out of any
+            # prose preamble, so we don't need assistant-prefill (which
+            # Claude 4.x rejects: "model does not support assistant
+            # message prefill").
             max_tokens=4096,
-            # Prefill forces the model into JSON-mode immediately: it
-            # continues from `[` instead of preambling with analysis prose
-            # and running out of tokens before reaching the array.
-            assistant_prefill="[",
         )
     except RuntimeError as e:
         # No key, disabled, etc — skip cleanly.
