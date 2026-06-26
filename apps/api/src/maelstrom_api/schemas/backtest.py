@@ -80,3 +80,26 @@ class TradeOut(BaseModel):
     pnl: float
     ts: datetime
     reason: str | None = None
+
+
+class BacktestDiagnostics(BaseModel):
+    """Extra analytics computed from fills + equity. Helps answer
+    'why did this strategy win/lose money' beyond the headline metrics."""
+
+    fills_count: int
+    winning_fills: int
+    losing_fills: int
+    longest_winning_streak: int
+    longest_losing_streak: int
+    largest_win: float
+    largest_loss: float
+    avg_win: float
+    avg_loss: float
+    win_rate: float  # fraction (0..1)
+    profit_factor: float | None  # gross_profit / |gross_loss|
+    expectancy: float  # avg PnL per fill
+    time_in_market_pct: float  # fraction of bars where any position held
+    max_drawdown: float  # fraction (0..1) — same as headline metric
+    longest_drawdown_bars: int  # bars from peak to recovery
+    exposure_by_symbol: dict[str, float]  # symbol → total notional traded
+    pnl_by_symbol: dict[str, float]

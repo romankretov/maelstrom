@@ -15,6 +15,7 @@ import {
 } from "@/lib/backtests";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EquityChart } from "@/components/backtests/equity-chart";
+import { DiagnosticsCard } from "@/components/backtests/diagnostics-card";
 import { OptimizeDialog } from "@/components/backtests/optimize-dialog";
 import { cn } from "@/lib/utils";
 
@@ -156,6 +157,8 @@ export default function BacktestPage({ params }: { params: Promise<{ id: string 
               )}
             </CardContent>
           </Card>
+
+          <DiagnosticsCard runId={id} />
 
           <Card>
             <CardHeader className="pb-2">

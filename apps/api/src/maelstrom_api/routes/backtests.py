@@ -23,6 +23,7 @@ from maelstrom_api.models import (
 from maelstrom_api.routes.markets import get_arq_pool
 from maelstrom_api.schemas.backtest import (
     BacktestCreate,
+    BacktestDiagnostics,
     BacktestRunOut,
     EquityPointOut,
     SweepRequest,
@@ -262,6 +263,122 @@ async def get_trades(
         .limit(limit)
     )
     return list((await session.execute(stmt)).scalars().all())
+
+
+@router.get("/{run_id}/diagnostics", response_model=BacktestDiagnostics)
+async def get_diagnostics(
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> BacktestDiagnostics:
+    """Per-trade and equity-curve diagnostics computed on the fly."""
+    await _load_and_authorize(session, run_id, user)
+
+    trade_rows = (
+        (
+            await session.execute(
+                select(BacktestTrade)
+                .where(BacktestTrade.run_id == run_id)
+                .order_by(BacktestTrade.ts),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    equity_rows = (
+        (
+            await session.execute(
+                select(BacktestEquity)
+                .where(BacktestEquity.run_id == run_id)
+                .order_by(BacktestEquity.ts),
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # ---- per-fill stats. We treat each fill as a "trade" event; closing
+    # fills carry realized PnL, opens carry zero PnL.
+    fills_count = len(trade_rows)
+    pnls = [float(t.pnl) for t in trade_rows]
+    winners = [p for p in pnls if p > 0]
+    losers = [p for p in pnls if p < 0]
+    largest_win = max(winners) if winners else 0.0
+    largest_loss = min(losers) if losers else 0.0
+    avg_win = sum(winners) / len(winners) if winners else 0.0
+    avg_loss = sum(losers) / len(losers) if losers else 0.0
+    win_rate = (len(winners) / fills_count) if fills_count else 0.0
+    gross_profit = sum(winners)
+    gross_loss = sum(losers)
+    profit_factor = (gross_profit / abs(gross_loss)) if gross_loss < 0 else None
+    expectancy = (sum(pnls) / fills_count) if fills_count else 0.0
+
+    # Longest streaks
+    longest_win = longest_lose = cur_win = cur_lose = 0
+    for p in pnls:
+        if p > 0:
+            cur_win += 1
+            cur_lose = 0
+            longest_win = max(longest_win, cur_win)
+        elif p < 0:
+            cur_lose += 1
+            cur_win = 0
+            longest_lose = max(longest_lose, cur_lose)
+        else:
+            cur_win = cur_lose = 0
+
+    # Exposure + PnL by symbol
+    exposure_by_symbol: dict[str, float] = {}
+    pnl_by_symbol: dict[str, float] = {}
+    for t in trade_rows:
+        exposure_by_symbol[t.symbol] = exposure_by_symbol.get(t.symbol, 0.0) + float(t.qty) * float(
+            t.price,
+        )
+        pnl_by_symbol[t.symbol] = pnl_by_symbol.get(t.symbol, 0.0) + float(t.pnl)
+
+    # ---- equity-curve stats
+    # max_drawdown is already on the equity row's `drawdown` field (peak-to-now).
+    # longest_drawdown_bars = max consecutive bars where drawdown > 0.
+    max_dd = 0.0
+    longest_dd = cur_dd = 0
+    bars_with_position = 0
+    for eq in equity_rows:
+        dd = float(eq.drawdown)
+        max_dd = max(max_dd, dd)
+        if dd > 0:
+            cur_dd += 1
+            longest_dd = max(longest_dd, cur_dd)
+        else:
+            cur_dd = 0
+
+    # Time-in-market: count equity points where any non-zero position was
+    # held. We don't persist per-bar positions, so approximate as "bars
+    # between first and last fill" / total bars.
+    if trade_rows and equity_rows:
+        first_fill_ts = trade_rows[0].ts
+        last_fill_ts = trade_rows[-1].ts
+        bars_with_position = sum(1 for eq in equity_rows if first_fill_ts <= eq.ts <= last_fill_ts)
+    time_in_market_pct = (bars_with_position / len(equity_rows)) if equity_rows else 0.0
+
+    return BacktestDiagnostics(
+        fills_count=fills_count,
+        winning_fills=len(winners),
+        losing_fills=len(losers),
+        longest_winning_streak=longest_win,
+        longest_losing_streak=longest_lose,
+        largest_win=largest_win,
+        largest_loss=largest_loss,
+        avg_win=avg_win,
+        avg_loss=avg_loss,
+        win_rate=win_rate,
+        profit_factor=profit_factor,
+        expectancy=expectancy,
+        time_in_market_pct=time_in_market_pct,
+        max_drawdown=max_dd,
+        longest_drawdown_bars=longest_dd,
+        exposure_by_symbol=exposure_by_symbol,
+        pnl_by_symbol=pnl_by_symbol,
+    )
 
 
 @router.get("/strategies/{strategy_id}", response_model=list[BacktestRunOut])
