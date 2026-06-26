@@ -79,6 +79,21 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
     router.push("/strategies");
   }
 
+  async function clone() {
+    if (!strategy) return;
+    if (dirty && !confirm("Your unsaved edits won't be cloned. Continue?")) return;
+    try {
+      const next = await api<Strategy>(`/strategies/${id}/clone`, { method: "POST" });
+      router.push(`/strategies/${next.id}`);
+    } catch (e) {
+      alert(
+        e instanceof Error
+          ? e.message
+          : String((e as { message?: string }).message ?? "Clone failed"),
+      );
+    }
+  }
+
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (error)
     return (
@@ -103,6 +118,9 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" onClick={archive}>
             Archive
+          </Button>
+          <Button variant="ghost" size="sm" onClick={clone}>
+            Clone
           </Button>
           <DryRunButton code={code} />
           <BacktestForm strategyId={id} dirty={dirty} onSaveFirst={save} />

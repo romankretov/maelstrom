@@ -179,6 +179,77 @@ async def create_strategy(
     return _to_out(s, v)
 
 
+@router.post(
+    "/{strategy_id}/clone",
+    response_model=StrategyOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def clone_strategy(
+    strategy_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> StrategyOut:
+    """Create a new strategy whose v1 is a copy of the source's latest
+    version. Picks a non-colliding name by appending -copy(N) as needed.
+    """
+    src = await session.get(Strategy, strategy_id)
+    if src is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "strategy not found")
+    if not _can_access(src, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not your strategy")
+    latest = await _latest_version(session, src.id)
+    if latest is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "source has no versions to copy")
+
+    # Pick the first free `<name>-copy`, `<name>-copy-2`, ... in case the
+    # user clones twice. Strategy.name has a UNIQUE constraint, so 409 is
+    # the alternative; we'd rather just pick the next slot transparently.
+    base_name = f"{src.name}-copy"
+    candidate = base_name
+    suffix = 2
+    while True:
+        existing = (
+            await session.execute(select(Strategy).where(Strategy.name == candidate))
+        ).scalar_one_or_none()
+        if existing is None:
+            break
+        candidate = f"{base_name}-{suffix}"
+        suffix += 1
+        if suffix > 50:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "too many existing copies of this strategy name",
+            )
+
+    new = Strategy(
+        name=candidate,
+        description=src.description,
+        owner_id=user.id,
+    )
+    session.add(new)
+    await session.flush()
+    new_version = StrategyVersion(
+        strategy_id=new.id,
+        version=1,
+        code=latest.code,
+        params=latest.params,
+        author_id=user.id,
+        message=f"cloned from {src.name} v{latest.version}",
+    )
+    session.add(new_version)
+    await audit.record(
+        session,
+        action="strategy.clone",
+        actor_id=user.id,
+        target_kind="strategy",
+        target_id=str(new.id),
+        payload={"source_strategy_id": str(src.id), "new_name": candidate},
+    )
+    await session.commit()
+    await session.refresh(new)
+    return _to_out(new, new_version)
+
+
 @router.patch("/{strategy_id}", response_model=StrategyOut)
 async def update_strategy(
     strategy_id: uuid.UUID,
