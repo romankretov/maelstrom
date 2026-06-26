@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AccountEquityChart } from "@/components/portfolio/account-equity-chart";
 import { CredentialsCard } from "@/components/portfolio/credentials-form";
 import { PnlAttributionCard } from "@/components/portfolio/pnl-attribution-card";
 import { NewAccountDialog } from "@/components/portfolio/new-account-dialog";
@@ -241,6 +242,8 @@ export default function PortfolioPage() {
       )}
 
       {selected && selected.kind !== "paper" && <CredentialsCard accountId={selected.id} />}
+
+      {selected && <AccountEquityChart accountId={selected.id} />}
 
       {pLoad && <p className="text-sm text-muted-foreground">Loading portfolio…</p>}
       {portfolio && (
