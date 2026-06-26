@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SymbolAutocomplete } from "@/components/symbol-autocomplete";
 
 function isoDaysAgo(days: number): string {
   const d = new Date();
@@ -144,11 +145,12 @@ export function BacktestForm({
             </div>
             <div className="space-y-1 sm:col-span-2">
               <Label htmlFor="symbols">Symbols (comma-separated)</Label>
-              <Input
+              <SymbolAutocomplete
                 id="symbols"
+                source={source}
                 value={symbols}
-                onChange={(e) => setSymbols(e.target.value)}
-                placeholder="BTC-PERP,ETH-PERP"
+                onChange={setSymbols}
+                multi
               />
             </div>
             <div className="space-y-1">

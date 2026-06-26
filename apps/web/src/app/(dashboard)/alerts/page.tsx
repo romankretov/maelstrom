@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SymbolAutocomplete } from "@/components/symbol-autocomplete";
 import { cn } from "@/lib/utils";
 
 type Alert = {
@@ -140,11 +141,12 @@ function AlertForm({ onCreated }: { onCreated: () => void }) {
                     </option>
                   ))}
                 </select>
-                <Input
+                <SymbolAutocomplete
+                  source={source}
                   value={symbol}
-                  onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                  className="font-mono"
+                  onChange={(v) => setSymbol(v.toUpperCase())}
                   required
+                  className="flex-1"
                 />
               </div>
             </div>

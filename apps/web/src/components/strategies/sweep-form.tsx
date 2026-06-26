@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SymbolAutocomplete } from "@/components/symbol-autocomplete";
 
 type SweepResponse = {
   queued: number;
@@ -198,10 +199,12 @@ export function SweepForm({ strategyId }: { strategyId: string }) {
                 </div>
                 <div className="space-y-1 sm:col-span-2">
                   <Label htmlFor="symbols">Symbols (comma-separated)</Label>
-                  <Input
+                  <SymbolAutocomplete
                     id="symbols"
+                    source={source}
                     value={symbols}
-                    onChange={(e) => setSymbols(e.target.value)}
+                    onChange={setSymbols}
+                    multi
                   />
                 </div>
                 <div className="space-y-1">
