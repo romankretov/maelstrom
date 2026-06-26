@@ -36,8 +36,9 @@ Account state (read-only):
         .avg_price      average entry price
         .unrealized_pnl
     self.history(symbol, n=N) -> list[Bar]
-        Most-recent N bars, **newest first**, capped at N.
-        NOT an ever-growing counter -- if you need one, track it yourself.
+        Most-recent N bars in CHRONOLOGICAL order (oldest first, newest
+        last). Capped at N — first N-1 bars after start you'll get fewer.
+        NOT an ever-growing counter; if you need one, track it yourself.
     self.cash       -> float (USDC)
     self.equity     -> float (cash + position MTM)
     self.params     -> dict (whatever the backtest / live form sent)
@@ -121,8 +122,9 @@ class SmaCross(Strategy):
         if len(history) < long_n:
             return
 
-        # history is newest-first, so reverse for chronological math
-        closes = [b.close for b in reversed(history)]
+        # history is chronological (oldest first), so the newest closes
+        # are at the end of the list.
+        closes = [b.close for b in history]
         short_sma = _sma(closes[-short_n:])
         long_sma = _sma(closes[-long_n:])
         diff = short_sma - long_sma
@@ -160,13 +162,14 @@ class DonchianBreakout(Strategy):
         n = int(self.params.get("lookback", 20))
         notional = float(self.params.get("notional", 1000))
 
-        # n+1 so we have at least n COMPLETED bars before the current one.
+        # n+1 so we have n PRIOR bars plus the current one.
         history = self.history(bar.symbol, n=n + 1)
         if len(history) < n + 1:
             return
 
-        # history[0] is newest (current bar). Use bars [1..n+1] as the window.
-        window = history[1 : n + 1]
+        # history is oldest-first; history[-1] is the current bar. The
+        # n-bar lookback window is everything BEFORE the current bar.
+        window = history[:-1]
         upper = max(b.high for b in window)
         lower = min(b.low for b in window)
 
@@ -218,8 +221,8 @@ class RsiMeanReversion(Strategy):
         if len(history) < period + 1:
             return
 
-        # history is newest-first; flip for chronological RSI calc.
-        closes = [b.close for b in reversed(history)]
+        # history is already chronological (oldest first).
+        closes = [b.close for b in history]
         rsi = _rsi(closes, period)
 
         pos = self.position(bar.symbol)
@@ -256,8 +259,8 @@ class TrailingMomentum(Strategy):
         if len(history) < lookback + 1:
             return
 
-        # newest-first; oldest is history[-1].
-        ret = (history[0].close - history[-1].close) / history[-1].close
+        # chronological: history[0] is oldest, history[-1] is current bar.
+        ret = (history[-1].close - history[0].close) / history[0].close
         pos = self.position(bar.symbol)
 
         if pos.qty == 0 and ret > 0:
