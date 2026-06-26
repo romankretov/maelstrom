@@ -203,9 +203,9 @@ export default function BacktestPage({ params }: { params: Promise<{ id: string 
                       <th className="px-3 py-2 text-left">Side</th>
                       <th className="px-3 py-2 text-right">Qty</th>
                       <th className="px-3 py-2 text-right">Price</th>
-                      <th className="px-3 py-2 text-right">Fee</th>
+                      <th className="hidden px-3 py-2 text-right sm:table-cell">Fee</th>
                       <th className="px-3 py-2 text-right">PnL</th>
-                      <th className="px-3 py-2 text-left">Reason</th>
+                      <th className="hidden px-3 py-2 text-left md:table-cell">Reason</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -229,7 +229,7 @@ export default function BacktestPage({ params }: { params: Promise<{ id: string 
                         <td className="px-3 py-1 text-right font-mono tabular-nums">
                           {fmtMoney(t.price)}
                         </td>
-                        <td className="px-3 py-1 text-right font-mono tabular-nums text-muted-foreground">
+                        <td className="hidden px-3 py-1 text-right font-mono tabular-nums text-muted-foreground sm:table-cell">
                           {fmtMoney(t.fee)}
                         </td>
                         <td
@@ -241,7 +241,9 @@ export default function BacktestPage({ params }: { params: Promise<{ id: string 
                         >
                           {t.pnl !== 0 ? fmtMoney(t.pnl) : "—"}
                         </td>
-                        <td className="px-3 py-1 text-muted-foreground">{t.reason ?? "—"}</td>
+                        <td className="hidden px-3 py-1 text-muted-foreground md:table-cell">
+                          {t.reason ?? "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

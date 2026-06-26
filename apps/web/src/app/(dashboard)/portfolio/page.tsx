@@ -391,7 +391,7 @@ export default function PortfolioPage() {
                       <th className="px-3 py-2 text-left">Side</th>
                       <th className="px-3 py-2 text-right">Qty</th>
                       <th className="px-3 py-2 text-right">Price</th>
-                      <th className="px-3 py-2 text-right">Fee</th>
+                      <th className="hidden px-3 py-2 text-right sm:table-cell">Fee</th>
                       <th className="px-3 py-2 text-right">PnL</th>
                     </tr>
                   </thead>
@@ -416,7 +416,7 @@ export default function PortfolioPage() {
                         <td className="px-3 py-1 text-right font-mono tabular-nums">
                           {fmtMoney(num(f.price))}
                         </td>
-                        <td className="px-3 py-1 text-right font-mono tabular-nums text-muted-foreground">
+                        <td className="hidden px-3 py-1 text-right font-mono tabular-nums text-muted-foreground sm:table-cell">
                           {fmtMoney(num(f.fee))}
                         </td>
                         <td

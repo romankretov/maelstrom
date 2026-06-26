@@ -217,7 +217,7 @@ export default function LiveRuntimePage({
               fill/reject, or raises in on_bar. Quiet ticks aren&apos;t logged.
             </p>
           ) : (
-            <div className="max-h-[60vh] overflow-y-auto">
+            <div className="max-h-[60vh] overflow-auto">
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-card text-muted-foreground">
                   <tr>

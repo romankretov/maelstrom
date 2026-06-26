@@ -141,10 +141,10 @@ export default function LivePage() {
                   <tr>
                     <th className="px-3 py-2 text-left">Status</th>
                     <th className="px-3 py-2 text-left">Strategy</th>
-                    <th className="px-3 py-2 text-left">Account</th>
-                    <th className="px-3 py-2 text-left">Symbols · TF</th>
+                    <th className="hidden px-3 py-2 text-left sm:table-cell">Account</th>
+                    <th className="hidden px-3 py-2 text-left md:table-cell">Symbols · TF</th>
                     <th className="px-3 py-2 text-right">Realized</th>
-                    <th className="px-3 py-2 text-right">Started</th>
+                    <th className="hidden px-3 py-2 text-right md:table-cell">Started</th>
                     <th className="px-3 py-2 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -185,7 +185,7 @@ export default function LivePage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-1.5 text-xs">
+                      <td className="hidden px-3 py-1.5 text-xs sm:table-cell">
                         <div className="flex flex-col">
                           <span className="font-mono">{r.account_name ?? "—"}</span>
                           <span className="text-[10px] text-muted-foreground">
@@ -193,7 +193,7 @@ export default function LivePage() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-3 py-1.5 font-mono text-xs">
+                      <td className="hidden px-3 py-1.5 font-mono text-xs md:table-cell">
                         {r.symbols.join(",")} · {r.timeframe} · {r.source}
                       </td>
                       <td
@@ -204,7 +204,7 @@ export default function LivePage() {
                       >
                         {fmtMoney(r.realized_pnl)}
                       </td>
-                      <td className="px-3 py-1.5 text-right text-xs text-muted-foreground">
+                      <td className="hidden px-3 py-1.5 text-right text-xs text-muted-foreground md:table-cell">
                         {relTime(r.started_at ?? r.created_at)}
                       </td>
                       <td className="px-3 py-1.5 text-right">
