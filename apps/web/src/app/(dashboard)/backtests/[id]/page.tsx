@@ -151,7 +151,7 @@ export default function BacktestPage({ params }: { params: Promise<{ id: string 
             </CardHeader>
             <CardContent className="h-72 p-2">
               {equity && equity.length > 0 ? (
-                <EquityChart points={equity} />
+                <EquityChart points={equity} trades={trades} />
               ) : (
                 <p className="p-4 text-sm text-muted-foreground">No equity data.</p>
               )}

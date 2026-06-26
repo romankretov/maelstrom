@@ -6,11 +6,18 @@ import {
   createChart,
   type IChartApi,
   type ISeriesApi,
+  type SeriesMarker,
   type Time,
 } from "lightweight-charts";
-import type { BacktestEquityPoint } from "@/lib/backtests";
+import type { BacktestEquityPoint, BacktestTrade } from "@/lib/backtests";
 
-export function EquityChart({ points }: { points: BacktestEquityPoint[] }) {
+export function EquityChart({
+  points,
+  trades,
+}: {
+  points: BacktestEquityPoint[];
+  trades?: BacktestTrade[];
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const equityRef = useRef<ISeriesApi<"Line"> | null>(null);
@@ -79,6 +86,29 @@ export function EquityChart({ points }: { points: BacktestEquityPoint[] }) {
     ddRef.current.setData(dd);
     chartRef.current?.timeScale().fitContent();
   }, [points]);
+
+  // Trade markers on the equity series. lightweight-charts requires markers
+  // sorted by time ascending; trades from the API already are, but sort
+  // defensively in case a future endpoint emits in different order.
+  useEffect(() => {
+    if (!equityRef.current) return;
+    if (!trades || trades.length === 0) {
+      equityRef.current.setMarkers([]);
+      return;
+    }
+    const sorted = [...trades].sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+    const markers: SeriesMarker<Time>[] = sorted.map((t) => {
+      const isBuy = t.side === "buy";
+      return {
+        time: (new Date(t.ts).getTime() / 1000) as Time,
+        position: isBuy ? "belowBar" : "aboveBar",
+        color: isBuy ? "#22c55e" : "#ef4444",
+        shape: isBuy ? "arrowUp" : "arrowDown",
+        text: `${isBuy ? "B" : "S"} ${t.qty.toFixed(4)}`,
+      };
+    });
+    equityRef.current.setMarkers(markers);
+  }, [trades]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }
