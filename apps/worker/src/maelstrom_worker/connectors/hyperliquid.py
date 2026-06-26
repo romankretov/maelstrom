@@ -1,5 +1,6 @@
 """Hyperliquid perpetuals via ccxt.pro (REST + WS in one client)."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
@@ -10,6 +11,12 @@ import structlog
 from .base import Bar, Instrument, Trade
 
 log = structlog.get_logger()
+
+# HL `/info` is shared across candle, meta, and book endpoints with an
+# aggressive per-IP rate limit. We add a tiny floor per request and
+# retry-with-backoff on the 429 we'll inevitably trip during bulk fetches.
+_HL_MIN_GAP_S = 0.15
+_HL_MAX_RETRIES = 4
 
 
 def _normalize_symbol(raw: str) -> str:
@@ -27,12 +34,53 @@ class HyperliquidSource:
 
     def __init__(self) -> None:
         self._ex = ccxtpro.hyperliquid({"enableRateLimit": True})
+        # Serializes REST calls in this client so concurrent fetch_ohlcv
+        # invocations don't race past HL's window. ccxt's own rateLimit
+        # field is per-instance but doesn't bound the floor tightly enough.
+        self._rest_lock = asyncio.Lock()
+        self._last_call_ts: float = 0.0
 
     async def close(self) -> None:
         await self._ex.close()
 
+    async def _rest_call(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
+        """Throttled + 429-retrying wrapper around a ccxt REST call.
+
+        The keeper fans out ~150 symbols x 3 timeframes per HL run. ccxt's
+        built-in throttle gates calls at ~50ms which trips HL's per-IP
+        limit on /info almost immediately. We add an explicit floor of
+        _HL_MIN_GAP_S between calls and back off exponentially on 429."""
+        backoff = 2.0
+        for attempt in range(_HL_MAX_RETRIES + 1):
+            async with self._rest_lock:
+                gap = asyncio.get_event_loop().time() - self._last_call_ts
+                if gap < _HL_MIN_GAP_S:
+                    await asyncio.sleep(_HL_MIN_GAP_S - gap)
+                try:
+                    result = await fn(*args, **kwargs)
+                    self._last_call_ts = asyncio.get_event_loop().time()
+                    return result
+                except Exception as e:
+                    self._last_call_ts = asyncio.get_event_loop().time()
+                    msg = str(e)
+                    # ccxt surfaces 429 as a plain Exception with the
+                    # response text inline; sniff for it rather than
+                    # importing ccxt.RateLimitExceeded (string match keeps
+                    # us decoupled from ccxt's class hierarchy).
+                    if "429" not in msg or attempt == _HL_MAX_RETRIES:
+                        raise
+                    log.warning(
+                        "hl.rate_limited",
+                        attempt=attempt + 1,
+                        backoff_s=backoff,
+                        error=msg[:160],
+                    )
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30.0)
+        raise RuntimeError("unreachable")  # for mypy
+
     async def list_instruments(self) -> list[Instrument]:
-        markets: dict[str, Any] = await self._ex.load_markets()
+        markets: dict[str, Any] = await self._rest_call(self._ex.load_markets)
         out: list[Instrument] = []
         for raw, m in markets.items():
             if not m.get("active"):
@@ -72,7 +120,8 @@ class HyperliquidSource:
         cursor_ms = _to_ms(since)
         until_ms = _to_ms(until)
         while cursor_ms < until_ms:
-            chunk = await self._ex.fetch_ohlcv(
+            chunk = await self._rest_call(
+                self._ex.fetch_ohlcv,
                 raw_symbol,
                 timeframe=timeframe,
                 since=cursor_ms,
@@ -158,7 +207,7 @@ class HyperliquidSource:
 
     async def _resolve_raw(self, normalized: str) -> str:
         if not self._ex.markets:
-            await self._ex.load_markets()
+            await self._rest_call(self._ex.load_markets)
         base = normalized.removesuffix("-PERP")
         raw = f"{base}/USDC:USDC"
         if raw not in self._ex.markets:

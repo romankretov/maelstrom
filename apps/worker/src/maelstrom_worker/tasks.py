@@ -430,6 +430,12 @@ async def keep_market_data_fresh(
                 tf_seconds = _TIMEFRAME_TO_SECONDS.get(tf, 60)
                 window_start = now - timedelta(days=days)
                 tf_total = 0
+                # Tracks how many sequential 429s we hit at the keeper level.
+                # The connector already retries+backs off internally, but if
+                # we're seeing repeated rate limits after that, the only
+                # right move is to abandon this run — slamming harder will
+                # just delay the live broker on the same IP.
+                consecutive_rate_limited = 0
                 for sym in symbols:
                     async with _sm()() as session:
                         latest = await _latest_bar_ts(session, src_name, sym, tf)
@@ -442,14 +448,27 @@ async def keep_market_data_fresh(
                         continue
                     try:
                         bars = await src.fetch_ohlcv(sym, tf, since, now)
+                        consecutive_rate_limited = 0
                     except Exception as e:
+                        msg = str(e)
                         log.warning(
                             "keeper.fetch_failed",
                             source=src_name,
                             symbol=sym,
                             tf=tf,
-                            error=str(e),
+                            error=msg,
                         )
+                        if "429" in msg:
+                            consecutive_rate_limited += 1
+                            if consecutive_rate_limited >= 5:
+                                log.warning(
+                                    "keeper.rate_limited_abort",
+                                    source=src_name,
+                                    tf=tf,
+                                    symbols_processed=symbols.index(sym),
+                                    symbols_total=len(symbols),
+                                )
+                                break
                         continue
                     if not bars:
                         continue

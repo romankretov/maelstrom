@@ -18,14 +18,16 @@ log = structlog.get_logger()
 async def startup(ctx: dict[str, Any]) -> None:
     settings = get_settings()
     log.info("worker.startup", env=settings.env)
-    # Kick instrument + market-data syncs on every worker boot so a fresh
-    # deploy doesn't need an out-of-band bootstrap step. Both are idempotent
-    # and quick once the catalog is warm.
+    # Kick instrument sync on boot — small, idempotent, makes the catalog
+    # available immediately after a fresh deploy. We deliberately do NOT
+    # kick keep_market_data_fresh here: it fans out ~150 perps x 3 timeframes
+    # which is a multi-minute burst against Hyperliquid's /info and trips
+    # 429s for everything else on the same IP (live broker, recon). The
+    # daily cron at 04:00 UTC handles bootstrap on its own.
     pool = ctx.get("redis")
     if pool is not None:
         try:
             await pool.enqueue_job("sync_instruments")
-            await pool.enqueue_job("keep_market_data_fresh")
             log.info("worker.startup.enqueued_initial_sync")
         except Exception as e:  # opportunistic; don't fail boot if Redis isn't ready
             log.warning("worker.startup.enqueue_failed", error=str(e))
