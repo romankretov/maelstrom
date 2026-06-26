@@ -1,11 +1,11 @@
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Any
 
 from arq import ArqRedis, create_pool
 from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy import and_, desc, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maelstrom_api.auth import current_active_user
@@ -73,25 +73,102 @@ async def list_instruments(
     kind: Annotated[str | None, Query()] = None,
     q: Annotated[str | None, Query(description="search base, quote, or symbol")] = None,
     active: Annotated[bool, Query()] = True,
+    sort: Annotated[
+        str,
+        Query(description="alpha | volume | change_24h"),
+    ] = "alpha",
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
-) -> list[Instrument]:
-    stmt = select(Instrument).where(Instrument.active == active)
+) -> list[InstrumentOut]:
+    """List instruments with optional ranking by 24h volume / change.
+
+    Alphabetic sort is fine for stock-like markets but for crypto perps
+    "biggest movers" or "most-traded" is what you actually want to see.
+    The volume/change columns come from a single 1h-bar aggregate; if no
+    data is stored, those rows just have NULL ranking columns and fall
+    to the bottom.
+    """
+    if sort not in ("alpha", "volume", "change_24h"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"unknown sort: {sort}")
+
+    if sort == "alpha":
+        stmt = select(Instrument).where(Instrument.active == active)
+        if source:
+            stmt = stmt.where(Instrument.source == source)
+        if kind:
+            stmt = stmt.where(Instrument.kind == kind)
+        if q:
+            like = f"%{q.upper()}%"
+            stmt = stmt.where(
+                or_(
+                    func.upper(Instrument.symbol).like(like),
+                    func.upper(Instrument.base).like(like),
+                    func.upper(Instrument.quote).like(like),
+                ),
+            )
+        stmt = stmt.order_by(Instrument.base, Instrument.quote).limit(limit)
+        rows = (await session.execute(stmt)).scalars().all()
+        return [InstrumentOut.model_validate(r) for r in rows]
+
+    # volume / change_24h paths share a CTE that aggregates last 25h of
+    # 1h bars. Symbols with no recent bars come back with NULL and sort
+    # to the bottom via NULLS LAST.
+    params: dict[str, Any] = {"active": active}
+    where: list[str] = ["i.active = :active"]
     if source:
-        stmt = stmt.where(Instrument.source == source)
+        where.append("i.source = :source")
+        params["source"] = source
     if kind:
-        stmt = stmt.where(Instrument.kind == kind)
+        where.append("i.kind = :kind")
+        params["kind"] = kind
     if q:
-        like = f"%{q.upper()}%"
-        stmt = stmt.where(
-            or_(
-                func.upper(Instrument.symbol).like(like),
-                func.upper(Instrument.base).like(like),
-                func.upper(Instrument.quote).like(like),
-            ),
+        where.append(
+            "(UPPER(i.symbol) LIKE :like "
+            " OR UPPER(i.base) LIKE :like "
+            " OR UPPER(i.quote) LIKE :like)",
         )
-    stmt = stmt.order_by(Instrument.base, Instrument.quote).limit(limit)
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
+        params["like"] = f"%{q.upper()}%"
+    where_sql = " AND ".join(where)
+
+    order_col = "vol_24h" if sort == "volume" else "change_24h"
+    base_sql = (
+        "WITH agg AS ("
+        "  SELECT source, symbol, "
+        "         SUM(volume) AS vol_24h, "
+        "         (array_agg(close ORDER BY ts DESC))[1] AS close_now, "
+        "         (array_agg(close ORDER BY ts ASC))[1]  AS close_old "
+        "    FROM ohlcv "
+        "   WHERE timeframe = '1h' AND ts >= now() - INTERVAL '25 hours' "
+        "   GROUP BY source, symbol"
+        ") "
+        "SELECT i.source, i.symbol, i.raw_symbol, i.base, i.quote, i.kind, "
+        "       i.active, i.meta, "
+        "       a.vol_24h, "
+        "       CASE WHEN a.close_old > 0 "
+        "            THEN (a.close_now - a.close_old) / a.close_old "
+        "            ELSE NULL END AS change_24h "
+        "  FROM instruments i "
+        "  LEFT JOIN agg a ON a.source = i.source AND a.symbol = i.symbol"
+    )
+    # where_sql + order_col are both built from string constants above (no
+    # user input), so the composed query is safe despite f-string concat.
+    sql = f"{base_sql} WHERE {where_sql} ORDER BY {order_col} DESC NULLS LAST LIMIT :limit"
+    params["limit"] = limit
+    mapping_rows = (await session.execute(text(sql), params)).mappings().all()
+    return [
+        InstrumentOut(
+            source=r["source"],
+            symbol=r["symbol"],
+            raw_symbol=r["raw_symbol"],
+            base=r["base"],
+            quote=r["quote"],
+            kind=r["kind"],
+            active=r["active"],
+            meta=r["meta"] or {},
+            volume_24h=float(r["vol_24h"]) if r["vol_24h"] is not None else None,
+            change_24h=float(r["change_24h"]) if r["change_24h"] is not None else None,
+        )
+        for r in mapping_rows
+    ]
 
 
 # --- OHLCV -------------------------------------------------------------------

@@ -16,6 +16,9 @@ class InstrumentOut(BaseModel):
     kind: str
     active: bool
     meta: dict[str, Any] = Field(default_factory=dict)
+    # Optional ranking columns — populated when sort=volume or sort=change.
+    volume_24h: float | None = None
+    change_24h: float | None = None
 
 
 class BarOut(BaseModel):

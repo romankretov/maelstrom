@@ -13,7 +13,11 @@ export type Instrument = {
   kind: string;
   active: boolean;
   meta: Record<string, unknown>;
+  volume_24h?: number | null;
+  change_24h?: number | null;
 };
+
+export type InstrumentSort = "alpha" | "volume" | "change_24h";
 
 export type Bar = {
   ts: string;
