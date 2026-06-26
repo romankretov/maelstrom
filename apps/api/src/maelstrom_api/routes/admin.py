@@ -5,6 +5,7 @@ audit_log, llm_calls, and live_strategies so a single dashboard can show
 "is everything healthy" at a glance.
 """
 
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
@@ -68,6 +69,48 @@ class HealthSummary(BaseModel):
     live_runs: int
     paper_accounts: int
     live_accounts: int
+
+
+class DashboardLiveRun(BaseModel):
+    id: uuid.UUID
+    strategy_id: uuid.UUID
+    strategy_name: str | None = None
+    account_name: str | None = None
+    symbols: list[str]
+    timeframe: str
+    status: str
+
+
+class DashboardFill(BaseModel):
+    ts: datetime
+    account_name: str | None = None
+    strategy_name: str | None = None
+    symbol: str
+    side: str
+    qty: float
+    price: float
+    pnl: float
+
+
+class DashboardSignal(BaseModel):
+    id: uuid.UUID
+    ts: datetime
+    symbol: str
+    direction: str
+    score: float
+    confidence: float | None = None
+    horizon: str | None = None
+
+
+class DashboardOverview(BaseModel):
+    total_equity: float
+    total_cash: float
+    today_pnl: float
+    running_strategies: int
+    open_positions: int
+    runs: list[DashboardLiveRun]
+    fills: list[DashboardFill]
+    signals: list[DashboardSignal]
 
 
 class SetupChecklist(BaseModel):
@@ -236,6 +279,160 @@ async def health_summary(
         live_runs=live_runs,
         paper_accounts=paper_accounts,
         live_accounts=live_accounts,
+    )
+
+
+@router.get("/dashboard", response_model=DashboardOverview)
+async def dashboard_overview(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> DashboardOverview:
+    """One-call overview powering /dashboard: total equity across the
+    caller's accounts, today's P&L, currently-running live strategies,
+    most recent fills, latest active signals.
+
+    Scope: admin sees everything, regular user sees only own accounts
+    + own strategies. Signal feed is global (scanner is shared).
+    """
+    is_admin = bool(user.is_superuser)
+    params: dict[str, Any] = {"uid": user.id, "admin": is_admin}
+
+    # ---- account equity rollup
+    # Sum the latest account_equity per account the caller can see, and
+    # compare against the latest snapshot from before UTC midnight to get
+    # "today's P&L".
+    equity_rows = (
+        await session.execute(
+            text(
+                "WITH latest AS ("
+                "  SELECT DISTINCT ON (account_id) account_id, ts, equity, cash "
+                "    FROM account_equity ORDER BY account_id, ts DESC"
+                "), today_open AS ("
+                "  SELECT DISTINCT ON (account_id) account_id, equity AS open_equity "
+                "    FROM account_equity "
+                "   WHERE ts < date_trunc('day', now()) "
+                "   ORDER BY account_id, ts DESC"
+                ") "
+                "SELECT a.id, l.equity, l.cash, t.open_equity "
+                "  FROM accounts a "
+                "  LEFT JOIN latest l ON l.account_id = a.id "
+                "  LEFT JOIN today_open t ON t.account_id = a.id "
+                " WHERE a.is_active = TRUE AND (:admin OR a.owner_id = :uid)",
+            ),
+            params,
+        )
+    ).all()
+    total_equity = sum(float(r[1]) for r in equity_rows if r[1] is not None)
+    total_cash = sum(float(r[2]) for r in equity_rows if r[2] is not None)
+    today_pnl = sum(
+        float(r[1]) - float(r[3]) for r in equity_rows if r[1] is not None and r[3] is not None
+    )
+
+    # ---- live runs
+    run_rows = (
+        await session.execute(
+            text(
+                "SELECT ls.id, ls.strategy_id, s.name, a.name, ls.symbols, ls.timeframe, ls.status "
+                "  FROM live_strategies ls "
+                "  JOIN strategies s ON s.id = ls.strategy_id "
+                "  JOIN accounts a ON a.id = ls.account_id "
+                " WHERE ls.status IN ('running', 'pending_start') "
+                "   AND (:admin OR s.owner_id = :uid) "
+                " ORDER BY ls.created_at DESC LIMIT 20",
+            ),
+            params,
+        )
+    ).all()
+    runs = [
+        DashboardLiveRun(
+            id=r[0],
+            strategy_id=r[1],
+            strategy_name=r[2],
+            account_name=r[3],
+            symbols=list(r[4]),
+            timeframe=r[5],
+            status=r[6],
+        )
+        for r in run_rows
+    ]
+
+    # ---- recent fills
+    fill_rows = (
+        await session.execute(
+            text(
+                "SELECT f.ts, a.name, s.name, f.symbol, f.side, f.qty, f.price, f.pnl "
+                "  FROM fills f "
+                "  JOIN accounts a ON a.id = f.account_id "
+                "  LEFT JOIN orders o ON o.id = f.order_id "
+                "  LEFT JOIN live_strategies ls ON ls.id = o.live_strategy_id "
+                "  LEFT JOIN strategies s ON s.id = ls.strategy_id "
+                " WHERE :admin OR a.owner_id = :uid "
+                " ORDER BY f.ts DESC LIMIT 10",
+            ),
+            params,
+        )
+    ).all()
+    fills = [
+        DashboardFill(
+            ts=r[0],
+            account_name=r[1],
+            strategy_name=r[2],
+            symbol=r[3],
+            side=r[4],
+            qty=float(r[5]),
+            price=float(r[6]),
+            pnl=float(r[7]),
+        )
+        for r in fill_rows
+    ]
+
+    # ---- open positions count (caller scope)
+    open_positions = int(
+        (
+            await session.execute(
+                text(
+                    "SELECT COUNT(*) FROM positions p "
+                    "  JOIN accounts a ON a.id = p.account_id "
+                    " WHERE p.qty != 0 AND (:admin OR a.owner_id = :uid)",
+                ),
+                params,
+            )
+        ).scalar_one(),
+    )
+
+    # ---- latest non-expired signals (global)
+    sig_rows = (
+        await session.execute(
+            text(
+                "SELECT id, ts, symbol, direction, score, confidence, horizon "
+                "  FROM signals "
+                " WHERE expires_at IS NOT NULL AND expires_at >= now() "
+                " ORDER BY ts DESC LIMIT 5",
+            ),
+        )
+    ).all()
+    signals = [
+        DashboardSignal(
+            id=r[0],
+            ts=r[1],
+            symbol=r[2],
+            direction=r[3],
+            score=float(r[4]),
+            confidence=float(r[5]) if r[5] is not None else None,
+            horizon=r[6],
+        )
+        for r in sig_rows
+    ]
+
+    return DashboardOverview(
+        total_equity=total_equity,
+        total_cash=total_cash,
+        today_pnl=today_pnl,
+        running_strategies=len(runs),
+        open_positions=open_positions,
+        runs=runs,
+        fills=fills,
+        signals=signals,
     )
 
 
