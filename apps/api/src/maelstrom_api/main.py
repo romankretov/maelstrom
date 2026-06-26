@@ -81,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(ai.router)
     app.include_router(signals.router)
     app.include_router(notifications.router)
+    app.include_router(notifications.preview_router)
     app.include_router(research.router)
     app.include_router(admin.router)
     app.include_router(alerts.router)

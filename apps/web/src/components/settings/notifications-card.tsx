@@ -3,6 +3,7 @@
 import { useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { api, fetcher } from "@/lib/api";
+import { Eye } from "lucide-react";
 import { ALL_EVENTS, type NotificationChannel, type NotificationKind } from "@/lib/notifications";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -276,6 +277,81 @@ function ChannelRow({ c }: { c: NotificationChannel }) {
   );
 }
 
+type Preview = {
+  event: string;
+  payload: Record<string, unknown>;
+  rendered: string;
+};
+
+function PreviewDialog() {
+  const [open, setOpen] = useState(false);
+  const [event, setEvent] = useState<string>(ALL_EVENTS[0]);
+  const { data, isLoading } = useSWR<Preview>(
+    open ? `/notifications/preview?event=${event}` : null,
+    fetcher,
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs">
+          <Eye className="mr-1 h-3 w-3" /> Preview
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Notification preview</DialogTitle>
+          <DialogDescription>
+            What each event type looks like in Telegram / Discord. Uses sample payloads — the real
+            values get substituted in at send time.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-wrap gap-1 pb-2">
+          {ALL_EVENTS.map((e) => (
+            <button
+              key={e}
+              type="button"
+              onClick={() => setEvent(e)}
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[10px] uppercase",
+                event === e
+                  ? "bg-secondary text-secondary-foreground"
+                  : "border border-input text-muted-foreground hover:bg-secondary/40",
+              )}
+            >
+              {e.replace("_", " ")}
+            </button>
+          ))}
+        </div>
+        {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {data && (
+          <div className="space-y-3">
+            <div>
+              <div className="mb-1 text-[10px] uppercase text-muted-foreground">Rendered</div>
+              <pre className="whitespace-pre-wrap rounded border bg-muted/40 p-3 font-mono text-xs">
+                {data.rendered}
+              </pre>
+            </div>
+            <div>
+              <div className="mb-1 text-[10px] uppercase text-muted-foreground">Payload</div>
+              <pre className="overflow-x-auto rounded border bg-muted/40 p-3 font-mono text-[11px]">
+                {JSON.stringify(data.payload, null, 2)}
+              </pre>
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="ghost">
+              Close
+            </Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function NotificationsCard() {
   const { data, isLoading } = useSWR<NotificationChannel[]>("/notifications/channels", fetcher);
 
@@ -283,7 +359,10 @@ export function NotificationsCard() {
     <Card className="lg:col-span-2">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-base">Notifications</CardTitle>
-        <NewChannelDialog />
+        <div className="flex items-center gap-2">
+          <PreviewDialog />
+          <NewChannelDialog />
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}

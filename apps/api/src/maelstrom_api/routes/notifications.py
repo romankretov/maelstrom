@@ -1,10 +1,11 @@
 """Notification channel CRUD + send-test endpoint."""
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
 from arq import ArqRedis
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +25,103 @@ router = APIRouter(
     tags=["notifications"],
     dependencies=[Depends(current_active_user)],
 )
+
+
+# Separate router so the path doesn't have to live under /channels.
+preview_router = APIRouter(
+    prefix="/notifications",
+    tags=["notifications"],
+    dependencies=[Depends(current_active_user)],
+)
+
+
+# Mirrors the worker's notify._format_message — keep these aligned. The
+# worker is the source of truth; this is a UI preview only.
+def _format_preview(event_type: str, payload: dict[str, Any]) -> str:
+    if "text" in payload:
+        return str(payload["text"])
+    title = event_type.replace("_", " ").title()
+    lines = [f"*Maelstrom — {title}*"]
+    for k, v in payload.items():
+        lines.append(f"_{k}_: `{v}`")
+    return "\n".join(lines)
+
+
+# One example per event type. The shape matches what the actual
+# producers send — kept narrow on purpose so the preview reflects the
+# real on-the-wire payload.
+_SAMPLE_PAYLOADS: dict[str, dict[str, Any]] = {
+    "kill_account": {
+        "account": "Paper test",
+        "reason": "daily loss limit hit (-5.20%)",
+        "equity": "$9,481.20",
+    },
+    "backtest_done": {
+        "strategy": "SMA crossover",
+        "sharpe": "1.42",
+        "total_return": "+12.30%",
+        "max_drawdown": "-4.10%",
+        "trades": 38,
+    },
+    "signal_top": {
+        "symbol": "BTC-PERP",
+        "direction": "long",
+        "score": "82.5",
+        "horizon": "swing",
+        "rationale": "Reclaim of 200-day MA on rising open interest.",
+    },
+    "live_failed": {
+        "strategy": "Mean reversion v3",
+        "account": "HL testnet",
+        "error": "Strategy module raised: ZeroDivisionError",
+    },
+    "fill": {
+        "account": "HL testnet",
+        "symbol": "BTC-PERP",
+        "side": "buy",
+        "qty": "0.0140",
+        "price": "$72,150.00",
+        "fee": "$0.50",
+    },
+    "order_rejected": {
+        "account": "HL testnet",
+        "symbol": "BTC-PERP",
+        "side": "buy",
+        "reason": "post-only would cross book",
+    },
+    "daily_summary": {
+        "account": "HL main",
+        "pnl_24h": "+$184.20",
+        "open_positions": 2,
+        "fills_24h": 7,
+    },
+}
+
+
+class NotificationPreview(BaseModel):
+    event: str
+    payload: dict[str, Any]
+    rendered: str
+
+
+@preview_router.get("/preview", response_model=NotificationPreview)
+async def preview_notification(
+    user: Annotated[User, Depends(current_active_user)],
+    event: Annotated[str, Query(min_length=1, max_length=64)],
+) -> NotificationPreview:
+    """Return the rendered preview text for a given event type. Mirrors the
+    worker formatter — useful as 'what will I actually see in Telegram'.
+    """
+    del user  # auth gate only
+    payload = _SAMPLE_PAYLOADS.get(
+        event,
+        {"text": f"(no sample payload for '{event}' — falling back to plain text)"},
+    )
+    return NotificationPreview(
+        event=event,
+        payload=payload,
+        rendered=_format_preview(event, payload),
+    )
 
 
 def _to_out(c: NotificationChannel) -> NotificationChannelOut:
