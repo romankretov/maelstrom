@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { api, downloadAuthed, fetcher } from "@/lib/api";
+import { useCurrentAccount } from "@/lib/current-account";
 import { fmtMoney, fmtNum, fmtPct } from "@/lib/backtests";
 import { type Account, type PortfolioSummary, num } from "@/lib/trading";
 import { Button } from "@/components/ui/button";
@@ -104,7 +105,9 @@ function CreateAccountCard({ onCreated }: { onCreated: () => void }) {
 export default function PortfolioPage() {
   const { mutate } = useSWRConfig();
   const { data: accounts, isLoading: aLoad } = useSWR<Account[]>("/accounts", fetcher);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The "current account" is shared with the sidebar switcher, so picking
+  // an account here updates it everywhere else (and vice versa).
+  const { accountId: selectedId, setAccountId: setSelectedId } = useCurrentAccount();
   // Per-row busy marker: e.g. "close:BTC-PERP" while a manual close is in flight.
   const [busy, setBusy] = useState<string | false>(false);
 
@@ -113,7 +116,7 @@ export default function PortfolioPage() {
     if (accounts && accounts.length > 0 && !selectedId) {
       setSelectedId(accounts[0].id);
     }
-  }, [accounts, selectedId]);
+  }, [accounts, selectedId, setSelectedId]);
 
   const { data: portfolio, isLoading: pLoad } = useSWR<PortfolioSummary>(
     selectedId ? `/accounts/${selectedId}/portfolio` : null,
