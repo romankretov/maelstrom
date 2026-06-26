@@ -139,7 +139,7 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
             Clone
           </Button>
           <DryRunButton code={code} />
-          <BacktestForm strategyId={id} dirty={dirty} onSaveFirst={save} />
+          <BacktestForm strategyId={id} code={code} dirty={dirty} onSaveFirst={save} />
           <SweepForm strategyId={id} />
           <RunLiveForm strategyId={id} />
           <Button size="sm" onClick={save} disabled={busy || !dirty}>

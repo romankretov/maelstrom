@@ -21,6 +21,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SymbolAutocomplete } from "@/components/symbol-autocomplete";
+import { ParamsForm, buildParamsPayload, extractParams } from "@/components/strategies/params-form";
 
 function isoDaysAgo(days: number): string {
   const d = new Date();
@@ -37,10 +38,13 @@ function isoTodayMidnight(): string {
 
 export function BacktestForm({
   strategyId,
+  code = "",
   dirty = false,
   onSaveFirst,
 }: {
   strategyId: string;
+  /** Current code in the editor — used to scan for params and render form fields. */
+  code?: string;
   /** True if there are unsaved code edits in the parent editor. */
   dirty?: boolean;
   /** Called before submit when `dirty` is true. Must save a new version. */
@@ -55,6 +59,7 @@ export function BacktestForm({
   const [rangeStart, setRangeStart] = useState(isoDaysAgo(365));
   const [rangeEnd, setRangeEnd] = useState(isoTodayMidnight());
   const [initialCapital, setInitialCapital] = useState("10000");
+  const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,6 +74,7 @@ export function BacktestForm({
       if (dirty && onSaveFirst) {
         await onSaveFirst();
       }
+      const specs = extractParams(code);
       const run = await api<BacktestRun>(`/backtests/strategies/${strategyId}`, {
         method: "POST",
         body: JSON.stringify({
@@ -81,6 +87,7 @@ export function BacktestForm({
           range_start: new Date(rangeStart).toISOString(),
           range_end: new Date(rangeEnd).toISOString(),
           initial_capital: initialCapital,
+          params: buildParamsPayload(specs, paramValues),
         }),
       });
       setOpen(false);
@@ -181,6 +188,15 @@ export function BacktestForm({
               />
             </div>
           </div>
+
+          {code && (
+            <div className="border-t pt-3">
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Strategy params
+              </div>
+              <ParamsForm code={code} values={paramValues} onChange={setParamValues} />
+            </div>
+          )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 
