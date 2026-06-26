@@ -81,6 +81,33 @@ self.buy("BTC-PERP", notional=100)
 | `self.equity` | Cash + mark-to-market value of all open positions. |
 | `self.params` | Whatever dict was attached to the backtest/live run. Empty `{}` if none. |
 
+## Debug logging
+
+```python
+self.log(message: str, **fields)
+```
+
+Emit a debug message. `print()` and the `logging` module are blocked by the
+sandbox, so this is the supported way to surface "why did/didn't my strategy
+trade?" intermediate state. Example:
+
+```python
+def on_bar(self, bar):
+    rsi = self._rsi()
+    self.log("rsi check", rsi=round(rsi, 2), close=bar.close)
+    if rsi < 30 and self.position(bar.symbol).qty == 0:
+        self.buy(bar.symbol, notional=1000, reason="oversold")
+```
+
+- In **backtest**, messages are buffered on the engine; the dry-run dialog and
+  `BacktestResult.logs` expose them (capped at the most recent 50).
+- In **live**, the runner writes each call as a `live_events` row with
+  `kind='log'`. The event panel on the live run page renders them inline with
+  fills and order events.
+
+`message` is truncated to 500 chars. Fields are stored as-is — keep them small
+and JSON-serializable.
+
 ### `history()` gotchas
 
 - **Capped, not growing.** `len(self.history(sym, n=100))` is bounded

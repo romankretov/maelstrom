@@ -1,25 +1,32 @@
 # Maelstrom
 
-Personal quant trading suite. Ingests data via ccxt/yfinance, trades on Hyperliquid,
-backtests strategies with nautilus_trader, uses OpenAI + Anthropic for strategy
-generation and signal scanning, and ships notifications via Telegram and Discord.
+Personal quant trading suite. Ingests data via ccxt, trades live on Hyperliquid,
+backtests strategies with an in-house engine, uses OpenAI + Anthropic for
+strategy generation and signal scanning, and ships notifications via Telegram
+and Discord.
 
 Designed to run on a single VPS, with a web UI usable on both laptop and phone.
 
-**Status:** Phase 0 — foundation scaffold. Auth, dashboard shell, deploy pipeline.
-The rest of the suite lands phase by phase. See [`docs/roadmap.md`](docs/roadmap.md).
+**Status:** all seven phases shipped — auth, data ingestion, strategy editor +
+backtests, paper and Hyperliquid live trading, AI co-pilot + scanner +
+optimizer, notifications, backups + restore. See [`docs/roadmap.md`](docs/roadmap.md)
+for the per-phase breakdown.
 
 ---
 
 ## Stack
 
 - **API:** FastAPI + FastAPI-Users + SQLAlchemy 2 + asyncpg + Pydantic v2
-- **Worker:** arq (Redis-backed) for ingest, backtests, live strategies
-- **Web:** Next.js 15 (App Router) + React 19 + Tailwind + shadcn/ui + Recharts + lightweight-charts
+- **Worker:** arq (Redis-backed) for ingest, backtests, live runners, AI tasks
+- **Web:** Next.js 15 (App Router) + React 19 + Tailwind + shadcn/ui + Monaco editor + lightweight-charts + SWR
 - **Data:** Postgres 16 + TimescaleDB hypertables, Redis 7
+- **Engine:** in-house Python strategy SDK (sandboxed) — same code runs in backtest and live
+- **Exchanges:** ccxt.pro for Binance + Hyperliquid; HL agent-wallet signing for live trading
+- **AI:** Anthropic (Claude 4.x) + OpenAI SDKs, encrypted keys at rest, audit-logged calls
 - **Reverse proxy:** Caddy with auto Let's Encrypt
 - **Container:** Docker Compose, images in GHCR
-- **CI/CD:** GitHub Actions → GHCR → SSH-deploy to VPS
+- **CI/CD:** GitHub Actions → GHCR → SSH-deploy to VPS, with healthcheck-gated rollback
+- **Backups:** pg_dump → local + optional rclone offsite
 
 ## Prerequisites (local dev)
 
@@ -40,7 +47,8 @@ make dev                   # starts postgres, redis, api, worker, web with hot r
 Then open <http://localhost:3000>. The API is at <http://localhost:8000>, OpenAPI
 docs at <http://localhost:8000/docs>.
 
-On first boot, run migrations and create yourself a user:
+On first boot, run migrations and create yourself a user via the web UI's
+`/setup` screen (or, equivalently):
 
 ```bash
 make migrate
@@ -61,9 +69,33 @@ make dev        # start everything
 make logs S=api # tail one service
 make test       # run all tests
 make typecheck  # mypy + tsc
+make precheck   # lint + format + typecheck across api/worker/web
 make migrate-new M="add strategies table"
 make deploy TAG=main
 ```
+
+## Feature surface
+
+- **Markets:** symbol catalog (sortable by volume / 24h change / alpha), live
+  candles, watchlist of pinned symbols.
+- **Research:** correlation matrix, funding-rate history, realized vol stats.
+- **Strategies:** Monaco editor with the SDK reference inline, AI-generate
+  scaffold, version diff, persistent notes per strategy, dry-run before
+  saving.
+- **Backtesting:** auto-backfill missing bars, parameter sweep with a
+  metric-vs-param curve view, compare overlay (up to 6 runs), CSV export of
+  trades and equity.
+- **Live trading:** paper accounts + Hyperliquid testnet + mainnet (gated
+  behind a separate env flag), per-strategy notional caps, daily-loss kill
+  switch, reconciliation against the exchange every 5 minutes.
+- **AI:** strategy generation, strategy optimizer (post-backtest), opportunity
+  scanner (cron), journal assistant — all audit-logged with token/cost
+  tracking and prompt caching.
+- **Notifications:** Telegram + Discord channels with per-event toggles, quiet
+  hours, and a preview pane so you know what each event looks like before
+  enabling it.
+- **Ops:** dashboard with setup checklist + health metrics, append-only audit
+  log, encrypted secrets, scheduled pg_dump backups, restore script.
 
 ## Production deployment
 
@@ -85,7 +117,8 @@ This:
 - locks down SSH (key-only, no root, no password)
 - installs Docker, configures UFW + fail2ban + unattended-upgrades
 - adds a 4 GB swapfile
-- generates `/etc/maelstrom/master.key` (used to encrypt exchange API keys at rest — **back this up**)
+- generates `/etc/maelstrom/master.key` (used to encrypt exchange API keys, LLM
+  keys, and notification secrets at rest — **back this up**)
 - clones the repo to `/opt/maelstrom`
 - writes a `.env` with generated DB password + API secret
 
@@ -112,21 +145,32 @@ Push to `main`. Then:
 Once it's green, hit `https://maelstromhub.com/`. Register the first user via the
 API (see Quickstart above) and elevate to admin in psql.
 
+### Adding a live Hyperliquid account
+
+See [`docs/operations.md`](docs/operations.md#adding-a-hyperliquid-account-end-to-end)
+for the master-vs-agent wallet flow. Mainnet is gated behind
+`MAELSTROM_ALLOW_MAINNET=1` in `.env` — testnet first, always.
+
 ## Repo layout
 
 ```
 apps/
-  api/        FastAPI app
-  worker/     arq workers
+  api/        FastAPI app (auth, routes, schemas, alembic migrations)
+  worker/     arq workers (ingest, backtests, live runners, AI tasks, notify)
   web/        Next.js frontend
 packages/
-  connectors/ ccxt / yfinance / hyperliquid adapters (Phase 1+)
-  strategies/ strategy SDK exposed to user code (Phase 2+)
-  shared/     Pydantic models <-> TS types (Phase 1+)
+  connectors/ ccxt / hyperliquid adapters (live + historical)
+  strategies/ strategy SDK exposed to user code
+  shared/     Pydantic models <-> TS types
 infra/
   caddy/      reverse proxy config
-  scripts/    healthcheck, rollback, kill-switch
+  scripts/    healthcheck, rollback, restore, kill-switch
   bootstrap.sh
+docs/
+  roadmap.md       phase-by-phase plan + status
+  operations.md    runbook: deploys, HL onboarding, backup/restore, emergency
+  strategy-sdk.md  authoritative SDK contract for user strategies
+  test-backlog.md  manual verification checklist per feature area
 .github/workflows/
   ci.yml      PR + main checks (lint, type, test, docker smoke)
   build.yml   Push images to GHCR on main
@@ -141,7 +185,10 @@ compose.prod.yml  Production (uses GHCR images)
 - Login: password (Argon2) + TOTP for sensitive ops
 - SSH key-only, root disabled, password auth disabled, fail2ban
 - UFW: 22, 80, 443 only
-- Exchange API keys: stored encrypted in DB with `pynacl` SecretBox; master key in `/etc/maelstrom/master.key` (root:root, 0400)
+- Exchange API keys, LLM keys, and Telegram bot tokens: stored encrypted in DB
+  with `pynacl` SecretBox; master key in `/etc/maelstrom/master.key` (root:root, 0400)
+- User-written strategy code runs sandboxed — `__import__` is blocked, only the
+  SDK + `math` are injected as globals
 - Audit log: append-only Postgres table + DB trigger refusing UPDATE/DELETE
 - LLMs receive only sanitized snapshots; never raw API keys
 
