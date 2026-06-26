@@ -5,7 +5,7 @@ from typing import Annotated
 
 from arq import ArqRedis
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maelstrom_api import audit
@@ -220,6 +220,34 @@ async def _load_and_authorize(
     if s is None or not _can_access_strategy(s, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not your backtest")
     return run
+
+
+@router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_backtest(
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> None:
+    """Permanently delete a backtest run + its equity / trades rows.
+
+    Backtests accumulate fast (sweeps queue 10-50 per click) and the
+    sidebar list grows unbounded; this is the cleanup primitive.
+    """
+    await _load_and_authorize(session, run_id, user)
+    # backtest_equity + backtest_trades have ON DELETE CASCADE on run_id,
+    # so a single delete is enough.
+    await session.execute(
+        text("DELETE FROM backtest_runs WHERE id = :id"),
+        {"id": run_id},
+    )
+    await audit.record(
+        session,
+        action="backtest.delete",
+        actor_id=user.id,
+        target_kind="backtest_run",
+        target_id=str(run_id),
+    )
+    await session.commit()
 
 
 @router.get("/{run_id}", response_model=BacktestRunOut)

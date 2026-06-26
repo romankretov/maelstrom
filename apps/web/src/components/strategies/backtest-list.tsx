@@ -3,19 +3,20 @@
 import { useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { fetcher } from "@/lib/api";
+import { api, fetcher } from "@/lib/api";
 import { type BacktestRun, fmtPct, statusColor } from "@/lib/backtests";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 export function BacktestList({ strategyId }: { strategyId: string }) {
-  const { data, isLoading, error } = useSWR<BacktestRun[]>(
+  const { data, isLoading, error, mutate } = useSWR<BacktestRun[]>(
     `/backtests/strategies/${strategyId}`,
     fetcher,
     { refreshInterval: 4000 },
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -28,15 +29,43 @@ export function BacktestList({ strategyId }: { strategyId: string }) {
 
   const compareHref = `/backtests/compare?ids=${Array.from(selected).join(",")}`;
 
+  async function deleteSelected() {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} backtest run(s)? This is permanent.`)) return;
+    setDeleting(true);
+    try {
+      // Fire deletes in parallel; backtests are cheap to cascade-delete.
+      await Promise.all(ids.map((id) => api(`/backtests/${id}`, { method: "DELETE" })));
+      setSelected(new Set());
+      await mutate();
+    } catch (e) {
+      alert((e as { message?: string }).message ?? "Some deletes failed");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-sm">Backtest runs</CardTitle>
-        {selected.size >= 2 && (
+        {selected.size >= 1 && (
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">{selected.size} selected</span>
-            <Button asChild size="sm" variant="secondary" className="h-7">
-              <Link href={compareHref}>Compare</Link>
+            {selected.size >= 2 && (
+              <Button asChild size="sm" variant="secondary" className="h-7">
+                <Link href={compareHref}>Compare</Link>
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-destructive hover:text-destructive"
+              onClick={deleteSelected}
+              disabled={deleting}
+            >
+              {deleting ? "…" : "Delete"}
             </Button>
             <Button
               size="sm"
