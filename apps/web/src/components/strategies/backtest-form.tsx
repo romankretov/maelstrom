@@ -2,8 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import useSWR from "swr";
+import { api, fetcher } from "@/lib/api";
 import type { BacktestRun } from "@/lib/backtests";
+import type { Source, Timeframe } from "@/lib/markets";
+import { TIMEFRAMES } from "@/lib/markets";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -43,10 +46,11 @@ export function BacktestForm({
   onSaveFirst?: () => Promise<void>;
 }) {
   const router = useRouter();
+  const { data: sources } = useSWR<Source[]>("/markets/sources", fetcher);
   const [open, setOpen] = useState(false);
-  const [source, setSource] = useState("binance");
+  const [source, setSource] = useState("hyperliquid");
   const [symbols, setSymbols] = useState("BTC-PERP");
-  const [timeframe, setTimeframe] = useState("1h");
+  const [timeframe, setTimeframe] = useState<Timeframe>("1h");
   const [rangeStart, setRangeStart] = useState(isoDaysAgo(365));
   const [rangeEnd, setRangeEnd] = useState(isoTodayMidnight());
   const [initialCapital, setInitialCapital] = useState("10000");
@@ -110,16 +114,33 @@ export function BacktestForm({
           <div className="grid gap-3 py-4 sm:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor="source">Source</Label>
-              <Input id="source" value={source} onChange={(e) => setSource(e.target.value)} />
+              <select
+                id="source"
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+              >
+                {(sources ?? [{ name: "hyperliquid", label: "Hyperliquid" }]).map((s) => (
+                  <option key={s.name} value={s.name}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="space-y-1">
               <Label htmlFor="timeframe">Timeframe</Label>
-              <Input
+              <select
                 id="timeframe"
                 value={timeframe}
-                onChange={(e) => setTimeframe(e.target.value)}
-                placeholder="1m / 5m / 15m / 1h / 4h / 1d"
-              />
+                onChange={(e) => setTimeframe(e.target.value as Timeframe)}
+                className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+              >
+                {TIMEFRAMES.map((tf) => (
+                  <option key={tf} value={tf}>
+                    {tf}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="space-y-1 sm:col-span-2">
               <Label htmlFor="symbols">Symbols (comma-separated)</Label>

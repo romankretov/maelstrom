@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { api, fetcher } from "@/lib/api";
 import type { Account } from "@/lib/trading";
 import type { LiveStrategy } from "@/lib/live-strategies";
+import type { Source, Timeframe } from "@/lib/markets";
+import { TIMEFRAMES } from "@/lib/markets";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,15 +25,32 @@ import { cn } from "@/lib/utils";
 export function RunLiveForm({ strategyId }: { strategyId: string }) {
   const { mutate } = useSWRConfig();
   const { data: accounts } = useSWR<Account[]>("/accounts", fetcher);
+  const { data: sources } = useSWR<Source[]>("/markets/sources", fetcher);
   const [open, setOpen] = useState(false);
   const [accountId, setAccountId] = useState<string>("");
-  const [source, setSource] = useState("binance");
+  // Source is auto-derived from the selected account's kind: hl
+  // accounts force hyperliquid, paper accounts default to whatever's
+  // available. User can override but the dropdown removes typos.
+  const [source, setSource] = useState<string>("hyperliquid");
   const [symbols, setSymbols] = useState("BTC-PERP");
-  const [timeframe, setTimeframe] = useState("1m");
+  const [timeframe, setTimeframe] = useState<Timeframe>("1m");
   const [maxNotional, setMaxNotional] = useState("");
   const [shadowMode, setShadowMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // When the user picks an account, derive a sensible source default.
+  // Hyperliquid accounts only make sense against the hyperliquid source.
+  const selectedAccount = useMemo(
+    () => accounts?.find((a) => a.id === (accountId || accounts?.[0]?.id)),
+    [accounts, accountId],
+  );
+  useEffect(() => {
+    if (!selectedAccount) return;
+    if (selectedAccount.kind.startsWith("live_hl_")) {
+      setSource("hyperliquid");
+    }
+  }, [selectedAccount?.id, selectedAccount?.kind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -115,15 +134,39 @@ export function RunLiveForm({ strategyId }: { strategyId: string }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label htmlFor="source">Source</Label>
-                <Input id="source" value={source} onChange={(e) => setSource(e.target.value)} />
+                <select
+                  id="source"
+                  value={source}
+                  onChange={(e) => setSource(e.target.value)}
+                  disabled={selectedAccount?.kind.startsWith("live_hl_") ?? false}
+                  className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                >
+                  {(sources ?? [{ name: "hyperliquid", label: "Hyperliquid" }]).map((s) => (
+                    <option key={s.name} value={s.name}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+                {selectedAccount?.kind.startsWith("live_hl_") && (
+                  <p className="text-[10px] text-muted-foreground">
+                    Locked to <code>hyperliquid</code> for HL accounts.
+                  </p>
+                )}
               </div>
               <div className="space-y-1">
                 <Label htmlFor="timeframe">Timeframe</Label>
-                <Input
+                <select
                   id="timeframe"
                   value={timeframe}
-                  onChange={(e) => setTimeframe(e.target.value)}
-                />
+                  onChange={(e) => setTimeframe(e.target.value as Timeframe)}
+                  className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                >
+                  {TIMEFRAMES.map((tf) => (
+                    <option key={tf} value={tf}>
+                      {tf}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-1 sm:col-span-2">
                 <Label htmlFor="symbols">Symbols (comma-separated)</Label>
