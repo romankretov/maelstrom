@@ -35,6 +35,7 @@ export function RunLiveForm({ strategyId }: { strategyId: string }) {
   const [symbols, setSymbols] = useState("BTC-PERP");
   const [timeframe, setTimeframe] = useState<Timeframe>("1m");
   const [maxNotional, setMaxNotional] = useState("");
+  const [maxPositionQty, setMaxPositionQty] = useState("");
   const [shadowMode, setShadowMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +71,9 @@ export function RunLiveForm({ strategyId }: { strategyId: string }) {
       };
       if (maxNotional.trim()) {
         body.max_notional_per_symbol = maxNotional.trim();
+      }
+      if (maxPositionQty.trim()) {
+        body.max_position_qty = maxPositionQty.trim();
       }
       body.shadow_mode = shadowMode;
       await api<LiveStrategy>(`/live-strategies/strategies/${strategyId}`, {
@@ -173,14 +177,48 @@ export function RunLiveForm({ strategyId }: { strategyId: string }) {
                 <Input id="symbols" value={symbols} onChange={(e) => setSymbols(e.target.value)} />
               </div>
               <div className="space-y-1 sm:col-span-2">
-                <Label htmlFor="max-notional">Max notional per symbol ($, optional)</Label>
-                <Input
-                  id="max-notional"
-                  inputMode="decimal"
-                  value={maxNotional}
-                  onChange={(e) => setMaxNotional(e.target.value)}
-                  placeholder="e.g. 5000 — reject if a fill would exceed this"
-                />
+                <Label className="text-xs uppercase text-muted-foreground">Risk controls</Label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="max-notional" className="text-xs">
+                      Max notional per symbol ($)
+                    </Label>
+                    <Input
+                      id="max-notional"
+                      inputMode="decimal"
+                      value={maxNotional}
+                      onChange={(e) => setMaxNotional(e.target.value)}
+                      placeholder="e.g. 5000"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Reject any single order that would push position notional past this cap. Leave
+                      blank for no limit.
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="max-qty" className="text-xs">
+                      Max position quantity
+                    </Label>
+                    <Input
+                      id="max-qty"
+                      inputMode="decimal"
+                      value={maxPositionQty}
+                      onChange={(e) => setMaxPositionQty(e.target.value)}
+                      placeholder="e.g. 0.5 (BTC)"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Reject any order that would push absolute position size past this. Useful when
+                      notional cap isn&apos;t precise enough (e.g. price-volatile assets).
+                    </p>
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Account-level limits (daily loss %, kill switch) are managed from{" "}
+                  <a className="underline" href="/portfolio">
+                    Portfolio
+                  </a>{" "}
+                  and apply to all strategies on the account.
+                </p>
               </div>
               <div className="space-y-1 sm:col-span-2">
                 <label className="flex items-start gap-2 rounded-md border p-3 text-sm">
