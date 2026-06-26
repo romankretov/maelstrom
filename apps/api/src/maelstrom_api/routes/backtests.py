@@ -1,10 +1,12 @@
 """Backtest run creation + read-side endpoints."""
 
+import csv
+import io
 import uuid
 from typing import Annotated
 
 from arq import ArqRedis
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import desc, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -291,6 +293,70 @@ async def get_trades(
         .limit(limit)
     )
     return list((await session.execute(stmt)).scalars().all())
+
+
+@router.get("/{run_id}/trades.csv")
+async def export_trades_csv(
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> Response:
+    """CSV export of all simulated fills for a backtest run."""
+    await _load_and_authorize(session, run_id, user)
+    rows = (
+        (
+            await session.execute(
+                select(BacktestTrade)
+                .where(BacktestTrade.run_id == run_id)
+                .order_by(BacktestTrade.ts.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["ts", "symbol", "side", "qty", "price", "fee", "pnl", "reason"])
+    for r in rows:
+        w.writerow(
+            [r.ts.isoformat(), r.symbol, r.side, r.qty, r.price, r.fee, r.pnl, r.reason or ""]
+        )
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="backtest_{run_id}_trades.csv"'},
+    )
+
+
+@router.get("/{run_id}/equity.csv")
+async def export_equity_csv(
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> Response:
+    """CSV export of the equity curve for a backtest run."""
+    await _load_and_authorize(session, run_id, user)
+    rows = (
+        (
+            await session.execute(
+                select(BacktestEquity)
+                .where(BacktestEquity.run_id == run_id)
+                .order_by(BacktestEquity.ts.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["ts", "equity", "drawdown"])
+    for r in rows:
+        w.writerow([r.ts.isoformat(), r.equity, r.drawdown])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="backtest_{run_id}_equity.csv"'},
+    )
 
 
 @router.get("/{run_id}/diagnostics", response_model=BacktestDiagnostics)

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
-import { api, fetcher } from "@/lib/api";
+import { api, downloadAuthed, fetcher } from "@/lib/api";
 import { fmtMoney, fmtNum, fmtPct } from "@/lib/backtests";
 import { type Account, type PortfolioSummary, num } from "@/lib/trading";
 import { Button } from "@/components/ui/button";
@@ -364,8 +364,22 @@ export default function PortfolioPage() {
           {selected && <PnlAttributionCard accountId={selected.id} />}
 
           <Card>
-            <CardHeader className="pb-2">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm">Recent fills</CardTitle>
+              {selected && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    downloadAuthed(
+                      `/accounts/${selected.id}/fills.csv?limit=5000`,
+                      `${selected.name.replace(/\s+/g, "_")}_fills.csv`,
+                    )
+                  }
+                >
+                  Export CSV
+                </Button>
+              )}
             </CardHeader>
             <CardContent className="p-0">
               <div className="max-h-[50vh] overflow-auto">

@@ -1,12 +1,14 @@
 """LLM-generated trade signals — read-side endpoints + scanner control."""
 
+import csv
+import io
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated, Any
 
 from arq import ArqRedis
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -314,3 +316,58 @@ async def list_signals(
     if direction:
         stmt = stmt.where(Signal.direction == direction)
     return list((await session.execute(stmt)).scalars().all())
+
+
+@router.get("/export.csv")
+async def export_signals_csv(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    since: Annotated[datetime | None, Query()] = None,
+    symbol: Annotated[str | None, Query()] = None,
+    direction: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=10000)] = 5000,
+) -> Response:
+    """CSV export of recent signals. Same filters as GET /signals."""
+    cutoff = since or datetime.now(UTC) - timedelta(days=30)
+    stmt = select(Signal).where(Signal.ts >= cutoff).order_by(desc(Signal.ts)).limit(limit)
+    if symbol:
+        stmt = stmt.where(Signal.symbol == symbol)
+    if direction:
+        stmt = stmt.where(Signal.direction == direction)
+    rows = list((await session.execute(stmt)).scalars().all())
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(
+        [
+            "ts",
+            "scanner",
+            "source",
+            "symbol",
+            "direction",
+            "score",
+            "confidence",
+            "horizon",
+            "expires_at",
+            "rationale",
+        ]
+    )
+    for r in rows:
+        w.writerow(
+            [
+                r.ts.isoformat(),
+                r.scanner,
+                r.source,
+                r.symbol,
+                r.direction,
+                str(r.score),
+                str(r.confidence) if r.confidence is not None else "",
+                r.horizon or "",
+                r.expires_at.isoformat() if r.expires_at else "",
+                r.rationale.replace("\n", " ").strip(),
+            ]
+        )
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="signals.csv"'},
+    )

@@ -3,7 +3,8 @@
 import { use } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { fetcher } from "@/lib/api";
+import { downloadAuthed, fetcher } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import {
   type BacktestEquityPoint,
   type BacktestRun,
@@ -101,7 +102,35 @@ export default function BacktestPage({ params }: { params: Promise<{ id: string 
             {new Date(run.range_end).toLocaleDateString()} · capital ${run.initial_capital}
           </p>
         </div>
-        {run.status === "done" && <OptimizeDialog runId={run.id} strategyId={run.strategy_id} />}
+        {run.status === "done" && (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                downloadAuthed(
+                  `/backtests/${id}/trades.csv`,
+                  `backtest_${id.slice(0, 8)}_trades.csv`,
+                )
+              }
+            >
+              Trades CSV
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                downloadAuthed(
+                  `/backtests/${id}/equity.csv`,
+                  `backtest_${id.slice(0, 8)}_equity.csv`,
+                )
+              }
+            >
+              Equity CSV
+            </Button>
+            <OptimizeDialog runId={run.id} strategyId={run.strategy_id} />
+          </div>
+        )}
       </header>
 
       {run.status === "failed" && (

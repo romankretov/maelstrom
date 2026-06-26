@@ -1,12 +1,14 @@
 """Trading account CRUD + portfolio read-side endpoints."""
 
+import csv
+import io
 import uuid
 from decimal import Decimal
 from typing import Annotated
 
 import structlog
 from arq import ArqRedis
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -625,6 +627,39 @@ async def get_fills(
     await _load_account_or_403(session, account_id, user)
     stmt = select(Fill).where(Fill.account_id == account_id).order_by(desc(Fill.ts)).limit(limit)
     return list((await session.execute(stmt)).scalars().all())
+
+
+@router.get("/{account_id}/fills.csv")
+async def export_fills_csv(
+    account_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    limit: Annotated[int, Query(ge=1, le=10000)] = 5000,
+) -> Response:
+    """CSV export of live fills for an account."""
+    await _load_account_or_403(session, account_id, user)
+    rows = (
+        (
+            await session.execute(
+                select(Fill)
+                .where(Fill.account_id == account_id)
+                .order_by(desc(Fill.ts))
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["ts", "symbol", "side", "qty", "price", "fee"])
+    for r in rows:
+        w.writerow([r.ts.isoformat(), r.symbol, r.side, str(r.qty), str(r.price), str(r.fee)])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="account_{account_id}_fills.csv"'},
+    )
 
 
 # Silence unused — kept for forward references in P3.1 (live runner attaches fills)

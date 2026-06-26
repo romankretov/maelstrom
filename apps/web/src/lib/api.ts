@@ -36,3 +36,29 @@ export async function api<T>(path: string, init: RequestInit = {}, token?: strin
 }
 
 export const fetcher = <T>(path: string) => api<T>(path);
+
+/**
+ * Trigger a browser download of a CSV (or any blob) at `path` using the
+ * current auth token. Used for /backtests/.../trades.csv style endpoints
+ * which need the Bearer header — otherwise a plain <a download> would
+ * 401.
+ */
+export async function downloadAuthed(path: string, filename: string): Promise<void> {
+  const headers = new Headers();
+  const t = getToken();
+  if (t) headers.set("Authorization", `Bearer ${t}`);
+  const res = await fetch(`${API_BASE}${path}`, { headers });
+  if (!res.ok) {
+    const err: ApiError = { status: res.status, message: res.statusText };
+    throw err;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

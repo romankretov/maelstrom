@@ -1,8 +1,9 @@
 "use client";
 
 import useSWR from "swr";
-import { fetcher } from "@/lib/api";
+import { downloadAuthed, fetcher } from "@/lib/api";
 import { type Signal, directionTone } from "@/lib/signals";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BacktestSignalButton } from "@/components/signals/backtest-signal-button";
 import { ScannerControl } from "@/components/signals/scanner-control";
@@ -39,11 +40,20 @@ export default function Signals() {
 
   return (
     <div className="space-y-4">
-      <header>
-        <h1 className="text-2xl font-semibold">Signals</h1>
-        <p className="text-sm text-muted-foreground">
-          AI-ranked opportunities. Not auto-traded. Adjust cadence below.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-semibold">Signals</h1>
+          <p className="text-sm text-muted-foreground">
+            AI-ranked opportunities. Not auto-traded. Adjust cadence below.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => downloadAuthed("/signals/export.csv?limit=5000", "signals.csv")}
+        >
+          Export CSV
+        </Button>
       </header>
 
       <ScannerControl />
