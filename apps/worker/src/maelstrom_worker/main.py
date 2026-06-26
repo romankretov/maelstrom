@@ -18,12 +18,14 @@ log = structlog.get_logger()
 async def startup(ctx: dict[str, Any]) -> None:
     settings = get_settings()
     log.info("worker.startup", env=settings.env)
-    # Kick a sync on every worker boot so a fresh deploy populates instruments
-    # without an out-of-band step. Idempotent. Daily cron still runs at 03:00 UTC.
+    # Kick instrument + market-data syncs on every worker boot so a fresh
+    # deploy doesn't need an out-of-band bootstrap step. Both are idempotent
+    # and quick once the catalog is warm.
     pool = ctx.get("redis")
     if pool is not None:
         try:
             await pool.enqueue_job("sync_instruments")
+            await pool.enqueue_job("keep_market_data_fresh")
             log.info("worker.startup.enqueued_initial_sync")
         except Exception as e:  # opportunistic; don't fail boot if Redis isn't ready
             log.warning("worker.startup.enqueue_failed", error=str(e))
@@ -55,6 +57,7 @@ class WorkerSettings:
         tasks.run_backtest,
         tasks.reconcile_positions,
         tasks.sync_funding_rates,
+        tasks.keep_market_data_fresh,
         scan_opportunities,
         evaluate_alerts,
         dispatch_notification,
@@ -77,6 +80,9 @@ class WorkerSettings:
         cron(scan_opportunities, minute=set(range(0, 60, 5)), unique=True),
         # Funding-rate history — hourly catch-up. Source caps to ~30 perps.
         cron(tasks.sync_funding_rates, minute=17, unique=True),
+        # Rolling OHLCV depth keeper — runs at 04:00 UTC (quiet hour),
+        # also bootstraps on first deploy via the startup enqueue below.
+        cron(tasks.keep_market_data_fresh, hour=4, minute=0, unique=True),
         # Alerts — every minute. Each row gated by its own cooldown.
         cron(evaluate_alerts, second=30, unique=True),
     ]

@@ -52,12 +52,14 @@ Gotchas:
        you'll get fewer. Guard with: if len(history) < N: return.
     3. No built-in bar counter. Track one in on_init() if you need it.
     4. Identical code runs in backtest and live. Keep on_bar idempotent.
+    5. NO IMPORT STATEMENTS. The sandbox blocks 'import'. 'Strategy',
+       'EngineBar', 'Position', and 'math' are injected as globals.
 """
 `;
 
 const EMPTY = `${SDK_HEADER}
-from maelstrom_worker.engine.sdk import Strategy
-from maelstrom_worker.engine.types import EngineBar
+# 'Strategy' and 'EngineBar' are injected as globals by the sandbox —
+# DO NOT write 'import' statements; the sandbox blocks them.
 
 
 class MyStrategy(Strategy):
@@ -73,8 +75,8 @@ class MyStrategy(Strategy):
 `;
 
 const BUY_AND_HOLD = `${SDK_HEADER}
-from maelstrom_worker.engine.sdk import Strategy
-from maelstrom_worker.engine.types import EngineBar
+# 'Strategy' and 'EngineBar' are injected as globals by the sandbox —
+# DO NOT write 'import' statements; the sandbox blocks them.
 
 
 class BuyAndHold(Strategy):
@@ -93,8 +95,8 @@ class BuyAndHold(Strategy):
 `;
 
 const SMA_CROSS = `${SDK_HEADER}
-from maelstrom_worker.engine.sdk import Strategy
-from maelstrom_worker.engine.types import EngineBar
+# 'Strategy' and 'EngineBar' are injected as globals by the sandbox —
+# DO NOT write 'import' statements; the sandbox blocks them.
 
 
 def _sma(values: list[float]) -> float:
@@ -144,8 +146,8 @@ class SmaCross(Strategy):
 `;
 
 const BREAKOUT = `${SDK_HEADER}
-from maelstrom_worker.engine.sdk import Strategy
-from maelstrom_worker.engine.types import EngineBar
+# 'Strategy' and 'EngineBar' are injected as globals by the sandbox —
+# DO NOT write 'import' statements; the sandbox blocks them.
 
 
 class DonchianBreakout(Strategy):
@@ -181,8 +183,8 @@ class DonchianBreakout(Strategy):
 `;
 
 const RSI = `${SDK_HEADER}
-from maelstrom_worker.engine.sdk import Strategy
-from maelstrom_worker.engine.types import EngineBar
+# 'Strategy' and 'EngineBar' are injected as globals by the sandbox —
+# DO NOT write 'import' statements; the sandbox blocks them.
 
 
 def _rsi(closes: list[float], period: int) -> float:
@@ -233,8 +235,8 @@ class RsiMeanReversion(Strategy):
 `;
 
 const MOMENTUM = `${SDK_HEADER}
-from maelstrom_worker.engine.sdk import Strategy
-from maelstrom_worker.engine.types import EngineBar
+# 'Strategy' and 'EngineBar' are injected as globals by the sandbox —
+# DO NOT write 'import' statements; the sandbox blocks them.
 
 
 class TrailingMomentum(Strategy):

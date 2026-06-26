@@ -144,3 +144,7 @@ Known design differences (intentional, not parity violations):
    instance state (anything you set on `self`) is per-run.
 6. `self.params` is mutable but DO NOT mutate it — other components
    reference the same dict.
+7. **No `import` statements.** Strategy code runs inside a sandbox
+   that blocks `__import__`. `Strategy`, `EngineBar`, `Position`, and
+   `math` are injected as globals — write code that uses them
+   directly (no `from ... import ...` lines).

@@ -57,12 +57,23 @@ _ALLOWED_BUILTINS: dict[str, Any] = {
 
 
 def _compile_strategy(code: str) -> type[Strategy]:
-    """Exec user code in a sandboxed module and find a Strategy subclass."""
+    """Exec user code in a sandboxed module and find a Strategy subclass.
+
+    Imports are blocked by the sandbox (no __import__), so the SDK
+    symbols a strategy needs MUST be injected here as globals. Keep the
+    surface narrow.
+    """
     import math
+
+    # Inject the engine types so user code can subclass Strategy and use
+    # `EngineBar` for type hints without writing import statements.
+    from .types import EngineBar, Position
 
     module_globals: dict[str, Any] = {
         "__builtins__": _ALLOWED_BUILTINS,
         "Strategy": Strategy,
+        "EngineBar": EngineBar,
+        "Position": Position,
         "math": math,
     }
     try:

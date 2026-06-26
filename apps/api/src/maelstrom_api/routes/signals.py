@@ -168,15 +168,15 @@ def _strategy_template(
         "Signal rationale: {rationale}\n"
         "Source: {source}  Symbol: {symbol}  Direction: {direction}  "
         'Horizon: {horizon}\n"""\n\n'
-        "from maelstrom_worker.engine.sdk import Strategy as _S\n"
-        "from maelstrom_worker.engine.types import EngineBar\n\n\n"
-        "class Strategy(_S):\n"
+        "# Strategy + EngineBar are injected as globals by the sandbox;\n"
+        "# `import` statements are blocked.\n\n"
+        "class SignalStrategy(Strategy):\n"
         '    symbols = ("{symbol}",)\n'
         '    timeframe = "1h"\n\n'
         "    def on_init(self) -> None:\n"
-        "        self._entry_bar: int | None = None\n"
-        "        self._bar_index: int = 0\n\n"
-        "    def on_bar(self, bar: EngineBar) -> None:\n"
+        "        self._entry_bar = None\n"
+        "        self._bar_index = 0\n\n"
+        "    def on_bar(self, bar):\n"
         "        self._bar_index += 1\n"
         "        pos = self.position(bar.symbol)\n"
         "        if pos.qty == 0 and self._entry_bar is None:\n"

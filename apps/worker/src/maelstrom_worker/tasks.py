@@ -336,6 +336,144 @@ async def sync_funding_rates(
     return counts
 
 
+# ----------------------------------------------------------------- data keeper
+#
+# Rolling-window history maintenance. For every active perp instrument
+# this cron checks the newest stored bar per (source, symbol, tf) and
+# pulls in whatever's missing up to "now". Once a (symbol, tf) has been
+# bootstrapped, the daily run is small (just the trailing 24h of bars).
+#
+# Sized for ~150 HL perps + ~600 binance perps at default depths; total
+# bytes added per run is well under 100 MB even on a cold start.
+
+_KEEPER_TARGETS: dict[str, list[tuple[str, int]]] = {
+    "hyperliquid": [
+        ("1h", 365),  # 1 year of 1h bars
+        ("5m", 30),  # 30 days of 5m bars
+        ("1m", 7),  # 7 days of 1m bars
+    ],
+    "binance": [
+        ("1h", 365),
+        ("5m", 30),
+    ],
+}
+
+
+async def _latest_bar_ts(
+    session: AsyncSession,
+    source: str,
+    symbol: str,
+    timeframe: str,
+) -> datetime | None:
+    row = (
+        await session.execute(
+            text(
+                "SELECT MAX(ts) FROM ohlcv "
+                " WHERE source = :s AND symbol = :sym AND timeframe = :tf",
+            ),
+            {"s": source, "sym": symbol, "tf": timeframe},
+        )
+    ).first()
+    return row[0] if row and row[0] else None
+
+
+_TIMEFRAME_TO_SECONDS: dict[str, int] = {
+    "1m": 60,
+    "5m": 300,
+    "15m": 900,
+    "1h": 3600,
+    "4h": 14400,
+    "1d": 86400,
+}
+
+
+async def keep_market_data_fresh(
+    ctx: dict[str, Any],
+    source: str | None = None,
+) -> dict[str, Any]:
+    """Daily cron: ensure ohlcv has rolling history per _KEEPER_TARGETS.
+
+    For each (source, symbol, timeframe) target:
+      * if we have no rows: fetch the full target window in one go
+      * if we have rows: fetch from `latest + 1 tf` to now
+
+    Calls fetch_ohlcv on the connector directly (no backfill_jobs row);
+    the keeper is a background utility, not user-initiated.
+    """
+    now = datetime.now(UTC)
+    targets = [source] if source else list(_KEEPER_TARGETS.keys())
+    summary: dict[str, Any] = {"sources": {}}
+    for src_name in targets:
+        if src_name not in _KEEPER_TARGETS:
+            continue
+        async with _sm()() as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT symbol FROM instruments "
+                        " WHERE source = :s AND kind = 'perp' AND active = TRUE "
+                        " ORDER BY symbol",
+                    ),
+                    {"s": src_name},
+                )
+            ).all()
+        symbols = [r[0] for r in rows]
+        try:
+            src = get_source(src_name)
+        except ValueError:
+            log.warning("keeper.unknown_source", source=src_name)
+            continue
+
+        per_tf_written: dict[str, int] = {}
+        try:
+            for tf, days in _KEEPER_TARGETS[src_name]:
+                tf_seconds = _TIMEFRAME_TO_SECONDS.get(tf, 60)
+                window_start = now - timedelta(days=days)
+                tf_total = 0
+                for sym in symbols:
+                    async with _sm()() as session:
+                        latest = await _latest_bar_ts(session, src_name, sym, tf)
+                    since = (
+                        max(latest + timedelta(seconds=tf_seconds), window_start)
+                        if latest
+                        else window_start
+                    )
+                    if since >= now:
+                        continue
+                    try:
+                        bars = await src.fetch_ohlcv(sym, tf, since, now)
+                    except Exception as e:
+                        log.warning(
+                            "keeper.fetch_failed",
+                            source=src_name,
+                            symbol=sym,
+                            tf=tf,
+                            error=str(e),
+                        )
+                        continue
+                    if not bars:
+                        continue
+                    async with _sm()() as session:
+                        written = await _upsert_bars(session, bars)
+                    tf_total += written
+                per_tf_written[tf] = tf_total
+                log.info(
+                    "keeper.tf.done",
+                    source=src_name,
+                    tf=tf,
+                    bars_written=tf_total,
+                    symbols=len(symbols),
+                )
+        finally:
+            await src.close()
+        summary["sources"][src_name] = {
+            "symbols": len(symbols),
+            "written_by_tf": per_tf_written,
+        }
+    log.info("keeper.done", summary=summary)
+    return summary
+
+
 async def run_backtest(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:
     """Execute a backtest_runs row to completion."""
     log.info("backtest.task.start", run_id=run_id)
