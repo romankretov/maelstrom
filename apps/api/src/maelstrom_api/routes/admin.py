@@ -6,7 +6,7 @@ audit_log, llm_calls, and live_strategies so a single dashboard can show
 """
 
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -68,6 +68,21 @@ class HealthSummary(BaseModel):
     live_runs: int
     paper_accounts: int
     live_accounts: int
+
+
+class SetupChecklist(BaseModel):
+    """Lightweight 'how far through setup is this user' status — drives
+    the dashboard onboarding card. Each item is true once the user has
+    crossed a meaningful threshold (registered, configured a provider, etc.)
+    so the card auto-clears as the user makes progress."""
+
+    admin_exists: bool
+    llm_key_configured: bool
+    notification_channel_configured: bool
+    has_account: bool
+    hl_credentials_configured: bool
+    has_strategy: bool
+    has_backtest: bool
 
 
 # ----------------------------------------------------------------- endpoint
@@ -221,4 +236,63 @@ async def health_summary(
         live_runs=live_runs,
         paper_accounts=paper_accounts,
         live_accounts=live_accounts,
+    )
+
+
+@router.get("/setup-checklist", response_model=SetupChecklist)
+async def setup_checklist(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> SetupChecklist:
+    """Per-user setup progress. Counts only the caller's owned rows
+    (admins see global counts since the system is otherwise theirs)."""
+
+    # Pass admin-ness as a bound bool so the WHERE clauses stay a single
+    # fixed string — avoids ruff S608 on concatenated SQL and lets PG plan
+    # the query once.
+    is_admin = bool(user.is_superuser)
+    params = {"uid": user.id, "admin": is_admin}
+
+    async def _exists(sql: str, p: dict[str, Any] | None = None) -> bool:
+        result = await session.execute(text(sql), p or {})
+        return bool(result.scalar())
+
+    admin_exists = await _exists("SELECT COUNT(*) > 0 FROM users WHERE is_superuser = TRUE")
+    llm_key_configured = await _exists(
+        "SELECT COUNT(*) > 0 FROM llm_providers   WHERE api_key_enc IS NOT NULL AND enabled = TRUE",
+    )
+    notification_channel_configured = await _exists(
+        "SELECT COUNT(*) > 0 FROM notification_channels WHERE enabled = TRUE",
+    )
+    has_account = await _exists(
+        "SELECT COUNT(*) > 0 FROM accounts "
+        "  WHERE is_active = TRUE AND (:admin OR owner_id = :uid)",
+        params,
+    )
+    hl_credentials_configured = await _exists(
+        "SELECT COUNT(*) > 0 FROM accounts "
+        "  WHERE kind LIKE 'live_hl_%' AND api_key_enc IS NOT NULL "
+        "    AND (:admin OR owner_id = :uid)",
+        params,
+    )
+    has_strategy = await _exists(
+        "SELECT COUNT(*) > 0 FROM strategies "
+        "  WHERE is_archived = FALSE AND (:admin OR owner_id = :uid)",
+        params,
+    )
+    has_backtest = await _exists(
+        "SELECT COUNT(*) > 0 FROM backtest_runs br "
+        "  JOIN strategies s ON s.id = br.strategy_id "
+        "  WHERE :admin OR s.owner_id = :uid",
+        params,
+    )
+
+    return SetupChecklist(
+        admin_exists=admin_exists,
+        llm_key_configured=llm_key_configured,
+        notification_channel_configured=notification_channel_configured,
+        has_account=has_account,
+        hl_credentials_configured=hl_credentials_configured,
+        has_strategy=has_strategy,
+        has_backtest=has_backtest,
     )
