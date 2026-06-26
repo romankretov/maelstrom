@@ -483,6 +483,90 @@ async def run_backtest(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:
     return result
 
 
+async def close_position(
+    ctx: dict[str, Any],
+    account_id: str,
+    symbol: str,
+) -> dict[str, Any]:
+    """Submit a market-close order outside any strategy.
+
+    Reads the current position, picks the broker for the account kind,
+    and submits an opposite-side market order sized to flatten the
+    position. Routes through the same Broker abstraction as live
+    strategies, so paper accounts simulate the fill and HL accounts
+    hit the real exchange.
+    """
+    from .broker import HyperliquidBroker, OrderIntent, PaperBroker
+
+    async with _sm()() as session:
+        acc_row = (
+            await session.execute(
+                text(
+                    "SELECT id, kind, source FROM accounts WHERE id = :id",
+                ),
+                {"id": account_id},
+            )
+        ).first()
+        if acc_row is None:
+            return {"status": "error", "error": "account not found"}
+        pos_row = (
+            await session.execute(
+                text(
+                    "SELECT qty, last_price FROM positions "
+                    " WHERE account_id = :a AND symbol = :sym",
+                ),
+                {"a": account_id, "sym": symbol},
+            )
+        ).first()
+    if pos_row is None or float(pos_row[0]) == 0:
+        return {"status": "noop", "reason": "no open position"}
+
+    qty = float(pos_row[0])
+    last_price = float(pos_row[1] or 0)
+    side = "sell" if qty > 0 else "buy"
+    abs_qty = abs(qty)
+
+    sm = _sm()
+    kind = acc_row[1]
+    broker: HyperliquidBroker | PaperBroker
+    if kind.startswith("live_hl_"):
+        broker = HyperliquidBroker(sm, account_id=account_id)
+    else:
+        broker = PaperBroker(sm)
+
+    source = acc_row[2] or ("hyperliquid" if kind.startswith("live_hl_") else "binance")
+    intent = OrderIntent(
+        account_id=account_id,
+        live_strategy_id=None,
+        source=source,
+        symbol=symbol,
+        side=side,
+        qty=abs_qty,
+        reason="manual close",
+        idempotency_key=f"manual-close:{account_id}:{symbol}:{datetime.now(UTC).timestamp():.6f}",
+    )
+    try:
+        result = await broker.submit(intent, last_price or 0.0)
+    finally:
+        if hasattr(broker, "close"):
+            await broker.close()
+    log.info(
+        "manual.close.done",
+        account_id=account_id,
+        symbol=symbol,
+        side=side,
+        qty=abs_qty,
+        status=result.status,
+    )
+    return {
+        "status": result.status,
+        "filled_qty": result.filled_qty,
+        "avg_fill_price": result.avg_fill_price,
+        "pnl": result.pnl,
+        "error": result.error,
+    }
+
+
 async def dry_run_strategy(
     ctx: dict[str, Any],
     code: str,

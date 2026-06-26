@@ -492,6 +492,36 @@ async def get_portfolio(
     )
 
 
+@router.post("/{account_id}/positions/{symbol}/close", status_code=status.HTTP_202_ACCEPTED)
+async def close_position_route(
+    account_id: uuid.UUID,
+    symbol: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    arq: Annotated[ArqRedis, Depends(get_arq_pool)],
+) -> dict[str, str]:
+    """Manually close an open position via a market order. Routes through
+    the same Broker abstraction as live strategies so it works on paper
+    and Hyperliquid accounts alike. Async — enqueues a worker task and
+    returns immediately; the position row update lands shortly after."""
+    acc = await session.get(Account, account_id)
+    if acc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+    if not _can_access(acc, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not your account")
+    job = await arq.enqueue_job("close_position", str(account_id), symbol)
+    await audit.record(
+        session,
+        action="position.manual_close",
+        actor_id=user.id,
+        target_kind="account",
+        target_id=str(account_id),
+        payload={"symbol": symbol},
+    )
+    await session.commit()
+    return {"job_id": (job.job_id if job else "")}
+
+
 @router.get("/{account_id}/pnl-attribution", response_model=PnlAttribution)
 async def get_pnl_attribution(
     account_id: uuid.UUID,

@@ -104,6 +104,8 @@ export default function PortfolioPage() {
   const { mutate } = useSWRConfig();
   const { data: accounts, isLoading: aLoad } = useSWR<Account[]>("/accounts", fetcher);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Per-row busy marker: e.g. "close:BTC-PERP" while a manual close is in flight.
+  const [busy, setBusy] = useState<string | false>(false);
 
   // Auto-pick first account once they load.
   useEffect(() => {
@@ -138,6 +140,34 @@ export default function PortfolioPage() {
   }
 
   const selected = accounts.find((a) => a.id === selectedId);
+
+  async function closePosition(symbol: string) {
+    if (!selectedId) return;
+    if (!confirm(`Submit a market order to close your ${symbol} position?`)) return;
+    setBusy(`close:${symbol}`);
+    try {
+      await api(`/accounts/${selectedId}/positions/${encodeURIComponent(symbol)}/close`, {
+        method: "POST",
+      });
+      // Give the worker a moment to land the fill, then refresh.
+      setTimeout(
+        () =>
+          void Promise.all([
+            mutate(`/accounts/${selectedId}/portfolio`),
+            mutate(`/accounts/${selectedId}/pnl-attribution`),
+          ]),
+        1500,
+      );
+    } catch (e) {
+      alert(
+        e instanceof Error
+          ? e.message
+          : String((e as { message?: string }).message ?? "Close failed"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function killOrUnkill(kill: boolean) {
     if (!selectedId) return;
@@ -251,6 +281,7 @@ export default function PortfolioPage() {
                       <th className="px-3 py-2 text-right">Last</th>
                       <th className="px-3 py-2 text-right">Unrealized</th>
                       <th className="px-3 py-2 text-right">Realized</th>
+                      <th className="px-3 py-2 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -297,13 +328,24 @@ export default function PortfolioPage() {
                             >
                               {fmtMoney(num(p.realized_pnl))}
                             </td>
+                            <td className="px-3 py-1 text-right">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 text-xs text-destructive hover:text-destructive"
+                                disabled={busy === `close:${p.symbol}`}
+                                onClick={() => closePosition(p.symbol)}
+                              >
+                                {busy === `close:${p.symbol}` ? "…" : "Close"}
+                              </Button>
+                            </td>
                           </tr>
                         );
                       })}
                     {portfolio.positions.filter((p) => num(p.qty) !== 0).length === 0 && (
                       <tr>
                         <td
-                          colSpan={6}
+                          colSpan={7}
                           className="px-3 py-6 text-center text-sm text-muted-foreground"
                         >
                           No open positions.
