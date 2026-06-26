@@ -23,6 +23,7 @@ class StrategyOut(BaseModel):
     id: uuid.UUID
     name: str
     description: str | None = None
+    notes: str | None = None
     owner_id: uuid.UUID | None = None
     is_archived: bool
     created_at: datetime
@@ -46,4 +47,5 @@ class StrategyVersionCreate(BaseModel):
 
 class StrategyUpdate(BaseModel):
     description: str | None = None
+    notes: str | None = None
     is_archived: bool | None = None

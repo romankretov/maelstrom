@@ -62,6 +62,7 @@ def _to_out(strategy: Strategy, latest: StrategyVersion | None) -> StrategyOut:
         id=strategy.id,
         name=strategy.name,
         description=strategy.description,
+        notes=strategy.notes,
         owner_id=strategy.owner_id,
         is_archived=strategy.is_archived,
         created_at=strategy.created_at,
@@ -265,6 +266,8 @@ async def update_strategy(
 
     if body.description is not None:
         s.description = body.description
+    if body.notes is not None:
+        s.notes = body.notes
     if body.is_archived is not None:
         s.is_archived = body.is_archived
     await audit.record(

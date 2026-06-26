@@ -29,14 +29,17 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
   const [code, setCode] = useState("");
   const [message, setMessage] = useState("");
   const [description, setDescription] = useState("");
+  const [notes, setNotes] = useState("");
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [savingNotes, setSavingNotes] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!strategy) return;
     setCode(strategy.latest_version?.code ?? "");
     setDescription(strategy.description ?? "");
+    setNotes(strategy.notes ?? "");
     setDirty(false);
   }, [strategy?.id, strategy?.latest_version?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -69,6 +72,19 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
       );
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function saveNotes() {
+    setSavingNotes(true);
+    try {
+      await api(`/strategies/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ notes: notes }),
+      });
+      await mutate(`/strategies/${id}`);
+    } finally {
+      setSavingNotes(false);
     }
   }
 
@@ -183,6 +199,29 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
         </Card>
 
         <div className="space-y-4">
+          <Card className="h-fit">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm">Notes</CardTitle>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={saveNotes}
+                disabled={savingNotes || notes === (strategy.notes ?? "")}
+              >
+                {savingNotes ? "Saving…" : "Save"}
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder={
+                  "Free-form notes. Track hypotheses, observed behavior, things to try next.\n\nThese persist across sessions and are separate from version commit messages."
+                }
+                className="h-40 w-full resize-y rounded border bg-background px-2 py-1.5 font-mono text-xs"
+              />
+            </CardContent>
+          </Card>
           <SdkReference />
           <LiveList strategyId={id} />
           <BacktestList strategyId={id} />

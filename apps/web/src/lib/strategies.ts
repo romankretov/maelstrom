@@ -12,6 +12,7 @@ export type Strategy = {
   id: string;
   name: string;
   description: string | null;
+  notes: string | null;
   owner_id: string | null;
   is_archived: boolean;
   created_at: string;
