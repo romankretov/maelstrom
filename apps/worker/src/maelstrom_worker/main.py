@@ -59,18 +59,26 @@ class WorkerSettings:
         evaluate_alerts,
         dispatch_notification,
     ]
+    # `unique=True` is the load-bearing flag here. Without it, arq queues
+    # one job per missed tick when the worker falls behind (laptop sleep,
+    # GC pause, etc.) and then floods the system on resume — we've seen
+    # 30+ duplicate reconcile_positions kicks in a single second, all of
+    # which hit Hyperliquid's `/info` endpoint and get 429-rate-limited.
+    # With unique=True, only one pending instance can exist at a time.
     cron_jobs: ClassVar = [
-        cron(tasks.heartbeat, second=0),  # every minute
-        cron(tasks.sync_instruments, hour=3, minute=0),  # daily 03:00 UTC
-        # Position reconciliation against Hyperliquid every 5 min.
-        cron(tasks.reconcile_positions, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
+        cron(tasks.heartbeat, second=0, unique=True),  # every minute
+        cron(tasks.sync_instruments, hour=3, minute=0, unique=True),  # daily 03:00 UTC
+        cron(
+            tasks.reconcile_positions,
+            minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55},
+            unique=True,
+        ),
         # AI opportunity scanner — task self-gates on scanner_config.interval_minutes.
-        # We tick every 5 min so user-configured intervals are honoured within 5 min.
-        cron(scan_opportunities, minute=set(range(0, 60, 5))),
+        cron(scan_opportunities, minute=set(range(0, 60, 5)), unique=True),
         # Funding-rate history — hourly catch-up. Source caps to ~30 perps.
-        cron(tasks.sync_funding_rates, minute=17),
+        cron(tasks.sync_funding_rates, minute=17, unique=True),
         # Alerts — every minute. Each row gated by its own cooldown.
-        cron(evaluate_alerts, second=30),
+        cron(evaluate_alerts, second=30, unique=True),
     ]
     on_startup = startup
     on_shutdown = shutdown

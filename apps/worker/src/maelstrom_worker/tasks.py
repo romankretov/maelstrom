@@ -197,9 +197,14 @@ async def reconcile_positions(ctx: dict[str, Any]) -> dict[str, Any]:
                     "walletAddress": wallet,
                     "privateKey": decrypt_str(bytes(api_key_enc)),
                     "options": {"defaultType": "swap"},
-                    **({"test": True} if kind == "live_hl_testnet" else {}),
                 },
             )
+            if kind == "live_hl_testnet":
+                # Same fix as the broker: `test: True` in the constructor
+                # doesn't reliably flip ccxt's HL URLs to testnet; use
+                # set_sandbox_mode explicitly so we don't hit mainnet
+                # and get rate-limited.
+                client.set_sandbox_mode(True)
             try:
                 exch_positions = await client.fetch_positions()
             finally:
