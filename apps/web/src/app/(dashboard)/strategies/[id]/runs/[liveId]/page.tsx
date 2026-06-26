@@ -78,6 +78,7 @@ function eventTone(kind: string): string {
   if (kind === "fill") return "bg-emerald-500/15 text-emerald-400";
   if (kind === "reject" || kind === "on_bar_error") return "bg-rose-500/15 text-rose-500";
   if (kind === "submit") return "bg-blue-500/15 text-blue-400";
+  if (kind === "log") return "bg-violet-500/15 text-violet-400";
   return "bg-muted text-muted-foreground";
 }
 

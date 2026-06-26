@@ -89,6 +89,16 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    title: "Debug",
+    entries: [
+      {
+        name: "self.log",
+        sig: "self.log(message, **fields)",
+        doc: "Emit a debug message. Shows in dry-run results and the live event log. Use for visibility into 'why did/didn't my strategy trade?'",
+      },
+    ],
+  },
+  {
     title: "Bar fields",
     entries: [
       {

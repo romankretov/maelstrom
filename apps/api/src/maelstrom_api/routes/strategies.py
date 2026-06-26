@@ -373,6 +373,7 @@ class DryRunResponse(BaseModel):
     rejects: int
     sample_orders: list[dict[str, Any]]
     last_error: str | None = None
+    logs: list[dict[str, Any]] = []
 
 
 @router.post("/dry-run", response_model=DryRunResponse)

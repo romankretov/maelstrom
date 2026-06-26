@@ -69,6 +69,17 @@ class Strategy:
         elif pos.qty < 0:
             self.buy(symbol, qty=-pos.qty, reason=reason or "close-short")
 
+    def log(self, message: str, **fields: Any) -> None:
+        """Emit a log message that surfaces in the live runtime event panel
+        and in dry-run results. Use this for strategy-side debugging:
+
+            self.log("rsi crossed 30", rsi=29.8)
+
+        In backtest, messages are buffered on the engine and exposed via
+        BacktestResult.logs. In live, the runner persists them to
+        live_events with kind='log'."""
+        self._ctx.emit_log(message[:500], fields)
+
     # ---- state ------------------------------------------------------------
 
     def position(self, symbol: str) -> Position:

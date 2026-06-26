@@ -108,6 +108,10 @@ class BacktestEngine:
         self.equity_curve: list[EquityPoint] = []
         self.last_prices: dict[str, float] = {}
         self.history_per_symbol: dict[str, list[EngineBar]] = defaultdict(list)
+        # Strategy-emitted log messages via self.log(...). In backtest we
+        # buffer them so callers can inspect; in live the LiveContext's
+        # emit_log writes straight to the live_events table.
+        self.strategy_logs: list[dict[str, Any]] = []
         self.peak_equity: float = float(initial_capital)
         self._current_ts: datetime | None = None
 
@@ -119,6 +123,11 @@ class BacktestEngine:
     def history(self, symbol: str, n: int = 100) -> list[EngineBar]:
         h = self.history_per_symbol.get(symbol, [])
         return h[-n:] if n > 0 else list(h)
+
+    def emit_log(self, message: str, fields: dict[str, Any]) -> None:
+        """Strategy SDK hook — buffer the message + fields for the run."""
+        ts = self._current_ts.isoformat() if self._current_ts else None
+        self.strategy_logs.append({"ts": ts, "message": message, "fields": fields})
 
     def current_equity(self) -> float:
         return self.cash + sum(

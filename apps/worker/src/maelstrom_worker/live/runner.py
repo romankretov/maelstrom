@@ -59,6 +59,8 @@ class LiveContext:
         self.realized_pnl: float = 0.0
         # Filled by Strategy.buy/sell via the SDK; flushed after on_bar.
         self.pending_intents: list[OrderIntent] = []
+        # Filled by Strategy.log(); flushed after on_bar.
+        self.pending_log_entries: list[dict[str, Any]] = []
 
     # ---- Strategy SDK surface --------------------------------------------
 
@@ -86,6 +88,11 @@ class LiveContext:
         # into realized_pnl by the broker's accounting.
         open_cost = sum(pos.qty * pos.avg_price for pos in self.positions.values())
         return self.starting_capital + self.realized_pnl - open_cost
+
+    def emit_log(self, message: str, fields: dict[str, Any]) -> None:
+        """SDK hook for self.log(...). Queue the message for the runner's
+        per-bar drain so we don't open a DB session inside on_bar."""
+        self.pending_log_entries.append({"message": message, "fields": fields})
 
     def submit_order(
         self,
@@ -407,6 +414,7 @@ class LiveRunner:
         await self.broker.update_mark(ctx.account_id, bar.symbol, bar.close)
 
         ctx.pending_intents.clear()
+        ctx.pending_log_entries.clear()
         try:
             strategy.on_bar(bar)
         except Exception as e:
@@ -416,6 +424,18 @@ class LiveRunner:
                 {"symbol": bar.symbol, "error": f"{type(e).__name__}: {e}"[:500]},
             )
             return
+
+        # Flush any self.log() entries first so they appear before the
+        # corresponding order events in the event log.
+        for entry in ctx.pending_log_entries:
+            await self._emit_event(
+                "log",
+                {
+                    "symbol": bar.symbol,
+                    "message": entry["message"],
+                    **(entry.get("fields") or {}),
+                },
+            )
 
         # Only emit a bar event when something happened — otherwise the log
         # fills with noise on every tick. If a strategy queued intents this

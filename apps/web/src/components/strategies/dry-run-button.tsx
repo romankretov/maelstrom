@@ -29,6 +29,11 @@ type DryRunResponse = {
     reason: string | null;
   }[];
   last_error: string | null;
+  logs: {
+    ts: string | null;
+    message: string;
+    fields: Record<string, unknown>;
+  }[];
 };
 
 function Checkbox({ ok, label }: { ok: boolean; label: string }) {
@@ -128,6 +133,31 @@ export function DryRunButton({ code }: { code: string }) {
                   <pre className="whitespace-pre-wrap break-words rounded bg-rose-500/10 p-2 font-mono text-xs text-rose-400">
                     {result.last_error}
                   </pre>
+                </div>
+              )}
+
+              {result.logs && result.logs.length > 0 && (
+                <div>
+                  <div className="mb-1 text-[10px] uppercase text-muted-foreground">
+                    self.log messages ({result.logs.length})
+                  </div>
+                  <div className="max-h-48 overflow-y-auto rounded border bg-muted/30 p-2 font-mono text-[11px]">
+                    {result.logs.map((l, i) => (
+                      <div key={i} className="flex gap-2">
+                        <span className="text-muted-foreground">
+                          {l.ts ? new Date(l.ts).toLocaleTimeString() : "—"}
+                        </span>
+                        <span>{l.message}</span>
+                        {Object.keys(l.fields ?? {}).length > 0 && (
+                          <span className="text-muted-foreground">
+                            {Object.entries(l.fields)
+                              .map(([k, v]) => `${k}=${String(v)}`)
+                              .join(" ")}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
