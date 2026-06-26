@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { fetcher } from "@/lib/api";
 import type { Instrument } from "@/lib/markets";
 import { Input } from "@/components/ui/input";
+import { useWatchlist } from "@/lib/watchlist";
 import { cn } from "@/lib/utils";
 
 type SingleProps = {
@@ -51,6 +52,7 @@ export function SymbolAutocomplete(props: Props) {
     fetcher,
     { revalidateOnFocus: false },
   );
+  const { isPinned } = useWatchlist();
 
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
@@ -80,9 +82,19 @@ export function SymbolAutocomplete(props: Props) {
   const matches = useMemo(() => {
     if (!instruments) return [];
     const q = activeQuery;
-    if (!q) return instruments.slice(0, 12);
-    return instruments.filter((i) => i.symbol.toUpperCase().includes(q)).slice(0, 12);
-  }, [instruments, activeQuery]);
+    const filtered = q
+      ? instruments.filter((i) => i.symbol.toUpperCase().includes(q))
+      : instruments;
+    // Watchlist'd symbols float to the top — your pinned ones surface
+    // first regardless of the catalog's underlying sort.
+    return [...filtered]
+      .sort((a, b) => {
+        const ap = isPinned(a.source, a.symbol) ? 1 : 0;
+        const bp = isPinned(b.source, b.symbol) ? 1 : 0;
+        return bp - ap;
+      })
+      .slice(0, 12);
+  }, [instruments, activeQuery, isPinned]);
 
   function pick(sym: string) {
     if (multi) {

@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import useSWR from "swr";
+import { Star } from "lucide-react";
 import { fetcher } from "@/lib/api";
 import type { Instrument, InstrumentSort } from "@/lib/markets";
 import { Input } from "@/components/ui/input";
+import { useWatchlist } from "@/lib/watchlist";
 import { cn } from "@/lib/utils";
 
 function fmtVolume(n: number | null | undefined): string {
@@ -40,6 +42,18 @@ export function InstrumentList({
     fetcher,
     { refreshInterval: 0 },
   );
+  const { isPinned, toggle: togglePin } = useWatchlist();
+
+  // Re-sort the loaded list with pinned symbols at the top, preserving
+  // the backend's sort within each group.
+  const sorted = data
+    ? [...data].sort((a, b) => {
+        const ap = isPinned(a.source, a.symbol) ? 1 : 0;
+        const bp = isPinned(b.source, b.symbol) ? 1 : 0;
+        if (ap !== bp) return bp - ap; // pinned first
+        return 0;
+      })
+    : undefined;
 
   return (
     <div className="flex h-full flex-col gap-2">
@@ -77,37 +91,56 @@ export function InstrumentList({
             No instruments — run a sync_instruments job from a worker shell.
           </div>
         )}
-        {data?.map((i) => {
+        {sorted?.map((i) => {
           const active = i.symbol === selected;
+          const pinned = isPinned(i.source, i.symbol);
           return (
-            <button
+            <div
               key={`${i.source}:${i.symbol}`}
-              type="button"
-              onClick={() => onSelect(i.symbol)}
               className={cn(
-                "flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors",
+                "flex w-full items-center gap-1 px-3 py-2 text-sm transition-colors",
                 active ? "bg-secondary text-secondary-foreground" : "hover:bg-secondary/50",
               )}
             >
-              <span className="font-mono">{i.symbol}</span>
-              <span className="flex items-center gap-2 text-xs">
-                {sort === "volume" && (
-                  <span className="text-muted-foreground">vol {fmtVolume(i.volume_24h)}</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void togglePin(i.source, i.symbol);
+                }}
+                title={pinned ? "Unpin from watchlist" : "Pin to watchlist"}
+                className={cn(
+                  "shrink-0 rounded p-0.5 transition-colors",
+                  pinned ? "text-amber-400" : "text-muted-foreground hover:text-foreground",
                 )}
-                {sort === "change_24h" && (
-                  <span
-                    className={cn(
-                      "font-mono tabular-nums",
-                      (i.change_24h ?? 0) > 0 && "text-emerald-400",
-                      (i.change_24h ?? 0) < 0 && "text-rose-500",
-                    )}
-                  >
-                    {fmtChange(i.change_24h)}
-                  </span>
-                )}
-                {sort === "alpha" && <span className="text-muted-foreground">{i.quote}</span>}
-              </span>
-            </button>
+              >
+                <Star className="h-3.5 w-3.5" fill={pinned ? "currentColor" : "none"} />
+              </button>
+              <button
+                type="button"
+                onClick={() => onSelect(i.symbol)}
+                className="flex flex-1 items-center justify-between text-left"
+              >
+                <span className="font-mono">{i.symbol}</span>
+                <span className="flex items-center gap-2 text-xs">
+                  {sort === "volume" && (
+                    <span className="text-muted-foreground">vol {fmtVolume(i.volume_24h)}</span>
+                  )}
+                  {sort === "change_24h" && (
+                    <span
+                      className={cn(
+                        "font-mono tabular-nums",
+                        (i.change_24h ?? 0) > 0 && "text-emerald-400",
+                        (i.change_24h ?? 0) < 0 && "text-rose-500",
+                      )}
+                    >
+                      {fmtChange(i.change_24h)}
+                    </span>
+                  )}
+                  {sort === "alpha" && <span className="text-muted-foreground">{i.quote}</span>}
+                </span>
+              </button>
+            </div>
           );
         })}
       </div>

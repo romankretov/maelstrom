@@ -22,6 +22,7 @@ from .routes import (
     research,
     signals,
     strategies,
+    watchlist,
     ws_markets,
 )
 from .schemas import UserCreate, UserRead, UserUpdate
@@ -83,5 +84,6 @@ def create_app() -> FastAPI:
     app.include_router(research.router)
     app.include_router(admin.router)
     app.include_router(alerts.router)
+    app.include_router(watchlist.router)
     app.include_router(ws_markets.router)
     return app
