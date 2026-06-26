@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { CodeEditor } from "@/components/code-editor";
 import { AiGenerateDialog } from "@/components/strategies/ai-generate-dialog";
 import { BacktestForm } from "@/components/strategies/backtest-form";
+import { DryRunButton } from "@/components/strategies/dry-run-button";
 import { SweepForm } from "@/components/strategies/sweep-form";
 import { BacktestList } from "@/components/strategies/backtest-list";
 import { LiveList } from "@/components/strategies/live-list";
@@ -103,6 +104,7 @@ export default function StrategyEditor({ params }: { params: Promise<{ id: strin
           <Button variant="ghost" size="sm" onClick={archive}>
             Archive
           </Button>
+          <DryRunButton code={code} />
           <BacktestForm strategyId={id} dirty={dirty} onSaveFirst={save} />
           <SweepForm strategyId={id} />
           <RunLiveForm strategyId={id} />

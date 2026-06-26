@@ -58,6 +58,7 @@ class WorkerSettings:
         tasks.reconcile_positions,
         tasks.sync_funding_rates,
         tasks.keep_market_data_fresh,
+        tasks.dry_run_strategy,
         scan_opportunities,
         evaluate_alerts,
         dispatch_notification,

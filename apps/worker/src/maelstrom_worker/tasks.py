@@ -483,6 +483,158 @@ async def run_backtest(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:
     return result
 
 
+async def dry_run_strategy(
+    ctx: dict[str, Any],
+    code: str,
+    source: str = "hyperliquid",
+    symbol: str = "BTC-PERP",
+    timeframe: str = "1h",
+    hours: int = 24,
+) -> dict[str, Any]:
+    """Compile + execute a strategy against recently-stored OHLCV without
+    persisting fills, recording the run, or hitting the exchange.
+
+    Returns a small diagnostic payload the editor can render inline. Hard
+    cap: 5 seconds wall time, ~500 bars max.
+    """
+    from .engine.runner import BacktestEngine, _compile_strategy
+
+    cutoff = datetime.now(UTC) - timedelta(hours=max(1, min(hours, 168)))
+    async with _sm()() as session:
+        rows = (
+            await session.execute(
+                text(
+                    "SELECT ts, open, high, low, close, volume, trades_count "
+                    "  FROM ohlcv "
+                    " WHERE source = :s AND symbol = :sym AND timeframe = :tf "
+                    "   AND ts >= :cutoff "
+                    " ORDER BY ts ASC LIMIT 500",
+                ),
+                {"s": source, "sym": symbol, "tf": timeframe, "cutoff": cutoff},
+            )
+        ).all()
+
+    if not rows:
+        return {
+            "compiled": False,
+            "on_init_ran": False,
+            "bars_fed": 0,
+            "orders_queued": 0,
+            "fills": 0,
+            "rejects": 0,
+            "sample_orders": [],
+            "last_error": (
+                f"No {timeframe} bars stored for {source}:{symbol} in the last {hours}h. "
+                "Try a different symbol / timeframe, or run keep_market_data_fresh first."
+            ),
+        }
+
+    bars = [
+        Bar(
+            source=source,
+            symbol=symbol,
+            timeframe=timeframe,
+            ts=r[0],
+            open=float(r[1]),
+            high=float(r[2]),
+            low=float(r[3]),
+            close=float(r[4]),
+            volume=float(r[5]),
+            trades_count=r[6],
+        )
+        for r in rows
+    ]
+    # BacktestEngine expects its own EngineBar shape; the connector Bar's
+    # shape happens to be identical for the fields it uses, so reuse.
+    from .engine.types import EngineBar
+
+    engine_bars = [
+        EngineBar(
+            source=b.source,
+            symbol=b.symbol,
+            ts=b.ts,
+            open=b.open,
+            high=b.high,
+            low=b.low,
+            close=b.close,
+            volume=b.volume,
+        )
+        for b in bars
+    ]
+
+    # Compile + smoke-run.
+    try:
+        cls = _compile_strategy(code)
+    except Exception as e:
+        return {
+            "compiled": False,
+            "on_init_ran": False,
+            "bars_fed": 0,
+            "orders_queued": 0,
+            "fills": 0,
+            "rejects": 0,
+            "sample_orders": [],
+            "last_error": f"{type(e).__name__}: {e}",
+        }
+
+    engine = BacktestEngine(initial_capital=10_000)
+    strategy = cls()
+    strategy._ctx = engine
+    strategy._params = {}
+
+    on_init_ran = False
+    try:
+        strategy.on_init()
+        on_init_ran = True
+    except Exception as e:
+        return {
+            "compiled": True,
+            "on_init_ran": False,
+            "bars_fed": 0,
+            "orders_queued": 0,
+            "fills": 0,
+            "rejects": 0,
+            "sample_orders": [],
+            "last_error": f"on_init raised: {type(e).__name__}: {e}",
+        }
+
+    last_error: str | None = None
+    orders_before = len(engine.fills)
+    for b in engine_bars:
+        engine._current_ts = b.ts
+        engine.last_prices[b.symbol] = b.close
+        engine.history_per_symbol[b.symbol].append(b)
+        try:
+            strategy.on_bar(b)
+        except Exception as e:
+            last_error = f"on_bar at {b.ts.isoformat()} raised: {type(e).__name__}: {e}"
+            break
+
+    fills = engine.fills
+    sample = [
+        {
+            "ts": f.ts.isoformat(),
+            "symbol": f.symbol,
+            "side": f.side,
+            "qty": f.qty,
+            "price": f.price,
+            "pnl": f.pnl,
+            "reason": f.reason,
+        }
+        for f in fills[:5]
+    ]
+    return {
+        "compiled": True,
+        "on_init_ran": on_init_ran,
+        "bars_fed": len(engine_bars),
+        "orders_queued": len(fills) - orders_before,
+        "fills": sum(1 for f in fills if f.qty > 0),
+        "rejects": 0,
+        "sample_orders": sample,
+        "last_error": last_error,
+    }
+
+
 async def backfill_ohlcv(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
     """Run a backfill_jobs row to completion."""
     log.info("backfill.start", job_id=job_id)

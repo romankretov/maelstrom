@@ -7,10 +7,13 @@ A new strategy is created with v1 of the code. Every save creates a new
 strategy_versions row; old versions are immutable (audit + reproducibility).
 """
 
+import asyncio
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
+from arq import ArqRedis
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +21,7 @@ from maelstrom_api import audit
 from maelstrom_api.auth import current_active_user
 from maelstrom_api.db import get_session
 from maelstrom_api.models import Strategy, StrategyVersion, User
+from maelstrom_api.routes.markets import get_arq_pool
 from maelstrom_api.schemas.strategy import (
     StrategyCreate,
     StrategyOut,
@@ -276,6 +280,58 @@ async def archive_strategy(
         target_id=str(s.id),
     )
     await session.commit()
+
+
+# ---------------------------------------------------------------- dry-run
+
+
+class DryRunRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=200_000)
+    source: str = "hyperliquid"
+    symbol: str = "BTC-PERP"
+    timeframe: str = "1h"
+    hours: int = Field(default=24, ge=1, le=168)
+
+
+class DryRunResponse(BaseModel):
+    compiled: bool
+    on_init_ran: bool
+    bars_fed: int
+    orders_queued: int
+    fills: int
+    rejects: int
+    sample_orders: list[dict[str, Any]]
+    last_error: str | None = None
+
+
+@router.post("/dry-run", response_model=DryRunResponse)
+async def dry_run(
+    body: DryRunRequest,
+    arq: Annotated[ArqRedis, Depends(get_arq_pool)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> DryRunResponse:
+    """Compile + execute the supplied code against the last N hours of
+    stored OHLCV. Synchronous: blocks until the worker returns or we
+    hit a 10-second timeout.
+    """
+    job = await arq.enqueue_job(
+        "dry_run_strategy",
+        body.code,
+        body.source,
+        body.symbol,
+        body.timeframe,
+        body.hours,
+    )
+    if job is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "queue unavailable")
+    try:
+        result = await asyncio.wait_for(job.result(poll_delay=0.1), timeout=10.0)
+    except TimeoutError as e:
+        raise HTTPException(
+            status.HTTP_504_GATEWAY_TIMEOUT,
+            "dry-run timed out after 10s",
+        ) from e
+    return DryRunResponse(**result)
 
 
 # Silence the import-unused warning on `and_`; we'll use it in a follow-up commit.
